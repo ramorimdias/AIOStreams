@@ -83,9 +83,6 @@ type IgnoredKeys =
   | 'ip'
   | 'addonCategories'
   | 'appliedTemplates'
-  | 'simklClientId'
-  | 'simklAccessToken'
-  | 'simklVariantAccounts'
   | 'precacheNextEpisode'
   | 'alwaysPrecache'
   | 'precacheCondition';

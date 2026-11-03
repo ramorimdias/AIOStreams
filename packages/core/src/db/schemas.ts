@@ -1062,17 +1062,7 @@ export const UserDataSchema = z.object({
     .optional(),
   tmdbAccessToken: z.string().optional(),
   tmdbApiKey: z.string().optional(),
-  simklClientId: z.string().trim().min(1).max(256).optional(),
-  simklAccessToken: z.string().trim().min(1).max(512).optional(),
-  simklVariantAccounts: z
-    .record(
-      z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/),
-      z.object({
-        clientId: z.string().trim().max(256),
-        accessToken: z.string().trim().max(512),
-      })
-    )
-    .optional(),
+
   personalizedRecommendations: z
     .object({
       enabled: z.boolean().optional(),

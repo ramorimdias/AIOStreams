@@ -17,6 +17,8 @@ export const bootstrap = {
   databasePoolSize: Env.DATABASE_POOL_SIZE,
   settingsRefreshInterval: Env.SETTINGS_REFRESH_INTERVAL,
   secretKey: Env.SECRET_KEY,
+  simklClientId: Env.SIMKL_CLIENT_ID,
+  simklClientSecret: Env.SIMKL_CLIENT_SECRET,
   auth: Env.AIOSTREAMS_AUTH,
   authAdmins: Env.AIOSTREAMS_AUTH_ADMINS,
   authProxy: Env.AIOSTREAMS_AUTH_PROXY,

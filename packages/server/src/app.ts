@@ -1,4 +1,5 @@
-﻿import express, { Express } from 'express';
+﻿import simklApi from './routes/api/simkl.js';
+import express, { Express } from 'express';
 import {
   userApi,
   profilesApi,
@@ -132,6 +133,7 @@ apiRouter.use('/format', formatApi);
 apiRouter.use('/catalogs', catalogApi);
 apiRouter.use('/posters', postersApi);
 apiRouter.use('/oauth/exchange/gdrive', gdriveApi);
+apiRouter.use('/simkl', linkedAccountsRateLimiter, simklApi);
 apiRouter.use('/debrid', debridApi);
 apiRouter.use(
   '/search',

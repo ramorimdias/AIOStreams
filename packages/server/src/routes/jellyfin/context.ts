@@ -562,7 +562,10 @@ async function buildContext(
   };
   // Tokenless contexts also serve the configuration page's own requests.
   if (token) void recordClientAgent(uuid, variantContext.userAgent, 'jellyfin');
-  const configFor = async (selected: string[]): Promise<UserData> => {
+  const configFor = async (
+    selected: string[],
+    requireVariant = false
+  ): Promise<UserData> => {
     try {
       // Activation sets `healthResults` on its argument.
       const { userData: activated, applied } = await activateVariants(
@@ -573,7 +576,14 @@ async function buildContext(
       const data = applied.length
         ? await syncAndValidate(activated)
         : { ...baseUserData, healthResults: activated.healthResults };
-      return { ...data, ip: req.userIp };
+      return {
+        ...data,
+        ip: req.userIp,
+        personalizedRecommendations:
+          requireVariant && !data.activeVariants?.length && !data.autoVariants?.length
+            ? undefined
+            : data.personalizedRecommendations,
+      };
     } catch (error) {
       logger.warn(
         {
@@ -584,11 +594,12 @@ async function buildContext(
         },
         'variant activation failed for jellyfin request'
       );
-      return baseUserData;
+      return { ...baseUserData, personalizedRecommendations: undefined };
     }
   };
   userData = await configFor(
-    persona ? (persona.variants ?? []) : primaryVariants
+    persona ? (persona.variants ?? []) : primaryVariants,
+    Boolean(persona)
   );
 
   const serverIdValue = instanceServerId();

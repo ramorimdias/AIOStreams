@@ -86,7 +86,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     validatedUserData.newCatalogsDisabled = undefined;
     validatedUserData.upstreamCatalogOrder = undefined;
 
-    const aio = new AIOStreams(validatedUserData);
+    const aio = new AIOStreams(validatedUserData, { catalogPreview: true });
     await aio.initialise();
     // return minimal catalog data
     const catalogs = aio.getCatalogs().map((catalog) => ({

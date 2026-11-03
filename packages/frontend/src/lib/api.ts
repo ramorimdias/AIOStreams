@@ -703,6 +703,30 @@ function authed(credentials: Credentials) {
   return configAuth(credentials.uuid, credentials.password);
 }
 
+export function getSimklStatus(credentials: Credentials, variant: string) {
+  return api<{ configured: boolean; connected: boolean }>(
+    `GET /simkl?variant=${encodeURIComponent(variant)}`, authed(credentials)
+  );
+}
+
+export function startSimklConnection(credentials: Credentials, variant: string) {
+  return api<{ code: string; url: string; interval: number; expiresIn: number }>(
+    'POST /simkl/start', { ...authed(credentials), body: { variant } }
+  );
+}
+
+export function pollSimklConnection(credentials: Credentials, variant: string) {
+  return api<{ connected: boolean; retryIn?: number }>(
+    'POST /simkl/poll', { ...authed(credentials), body: { variant } }
+  );
+}
+
+export function disconnectSimkl(credentials: Credentials, variant: string) {
+  return api<{ connected: boolean }>(
+    'POST /simkl/disconnect', { ...authed(credentials), body: { variant } }
+  );
+}
+
 export async function fetchLinkedAccountPlatforms(credentials: Credentials) {
   return api<LinkedAccountPlatformInfo[]>(
     'GET /linked-accounts/platforms',

@@ -19,6 +19,9 @@ import {
   SimklRateLimit,
 } from './sources.js';
 
+import { bootstrap } from '../config/bootstrap.js';
+import { SimklConnection } from './simkl-connection.js';
+
 export const recommendationSource = 'aiostreams-recommendations';
 const rows = {
   top: 'Top Picks for You',
@@ -52,22 +55,25 @@ const retryAfter = Cache.getInstance<string, boolean>(
 );
 const limit = 24;
 
-function simklAccount(user: UserData) {
+function simklVariant(user: UserData) {
   const variants = user.activeVariants?.length
     ? user.activeVariants
-    : (user.autoVariants ?? []);
-  if (variants.length) {
-    const account = user.simklVariantAccounts?.[variants[variants.length - 1]];
-    return account?.clientId && account.accessToken ? account : undefined;
-  }
-  if (user.simklClientId && user.simklAccessToken) {
-    return { clientId: user.simklClientId, accessToken: user.simklAccessToken };
-  }
+    : user.autoVariants;
+  return variants?.at(-1) ?? '';
 }
 
-export function recommendationManifest(user: UserData): Manifest | undefined {
-  const settings = user.personalizedRecommendations;
-  if (!settings?.enabled || !simklAccount(user)) return;
+export async function recommendationManifest(
+  user: UserData,
+  preview = false
+): Promise<Manifest | undefined> {
+  if (!user.personalizedRecommendations?.enabled) return;
+  if (
+    preview
+      ? !SimklConnection.configured()
+      : !user.uuid ||
+        !(await SimklConnection.grantId(user.uuid, simklVariant(user)))
+  )
+    return;
   return {
     id: recommendationSource,
     name: 'Personalized Recommendations',
@@ -84,15 +90,18 @@ export function recommendationManifest(user: UserData): Manifest | undefined {
   };
 }
 
-export function recommendationKey(user: UserData, type: MediaType): string {
-  // Credentials participate in invalidation but never appear in the cache key.
+export function recommendationKey(
+  user: UserData,
+  type: MediaType,
+  grantId: string
+): string {
   return createHash('sha256')
     .update(
       JSON.stringify([
         userScopeKey(user),
         type,
         user.personalizedRecommendations,
-        simklAccount(user),
+        grantId,
         user.tmdbApiKey,
         user.tmdbAccessToken,
       ])
@@ -154,15 +163,23 @@ export function eligible(
 async function refresh(
   user: UserData,
   type: MediaType,
+  grantId: string,
   cached?: Snapshot
 ): Promise<Snapshot> {
   const settings = user.personalizedRecommendations!;
   const now = Date.now();
-  const account = simklAccount(user)!;
+  const accessToken = await SimklConnection.accessToken(
+    user.uuid!,
+    simklVariant(user),
+    grantId
+  );
+  if (!accessToken)
+    throw new SimklAuthorizationError('Simkl authorization has expired.');
   const history = await new SimklHistory(
-    account.clientId,
-    account.accessToken,
-    userScopeKey(user)
+    bootstrap.simklClientId,
+    accessToken,
+    userScopeKey(user),
+    grantId
   ).history(type);
   history.sort(
     (a, b) =>
@@ -385,14 +402,16 @@ export async function getRecommendationCatalog(
 ): Promise<MetaPreview[]> {
   if (
     !user.uuid ||
-    !recommendationManifest(user)?.catalogs.some(
-      (catalog) => catalog.type === type && catalog.id === id
-    )
+    !user.personalizedRecommendations?.enabled ||
+    !types.includes(type as MediaType) ||
+    !rowIds.includes(id as Row)
   )
     return [];
+  const grantId = await SimklConnection.grantId(user.uuid, simklVariant(user));
+  if (!grantId) return [];
   const media = type as MediaType;
   const row = id as Row;
-  const key = recommendationKey(user, media);
+  const key = recommendationKey(user, media, grantId);
   const cached = await snapshots.get(key);
   const interval =
     (user.personalizedRecommendations?.refreshHours ?? 6) * 3600000;
@@ -402,7 +421,7 @@ export async function getRecommendationCatalog(
 
   let task = pending.get(key);
   if (!task) {
-    task = refresh(user, media, cached)
+    task = refresh(user, media, grantId, cached)
       .then(async (snapshot) => {
         await snapshots.set(key, snapshot, interval / 1000 + 7 * 86400);
         return snapshot;

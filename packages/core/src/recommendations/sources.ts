@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import pLimit from 'p-limit';
+import { bootstrap } from '../config/bootstrap.js';
 import { TMDBMetadata } from '../metadata/tmdb.js';
 import { Cache } from '../utils/cache.js';
 import { parseRetryAfter } from '../utils/http.js';
@@ -59,12 +60,18 @@ export class SimklHistory implements HistoryProvider {
   constructor(
     private clientId: string,
     private accessToken: string,
-    private scope: string
+    private scope: string,
+    private grantId?: string
   ) {}
 
   private async get(path: string, query: Record<string, string> = {}) {
     const url = new URL(path, 'https://api.simkl.com');
-    url.search = new URLSearchParams(query).toString();
+    url.search = new URLSearchParams({
+      ...query,
+      client_id: this.clientId,
+      'app-name': 'aiostreams',
+      'app-version': bootstrap.version,
+    }).toString();
     const response = await fetch(url, {
       headers: {
         'simkl-api-key': this.clientId,
@@ -99,7 +106,7 @@ export class SimklHistory implements HistoryProvider {
       .update(JSON.stringify([this.clientId, this.accessToken]))
       .digest('hex');
     const cacheKey = createHash('sha256')
-      .update(JSON.stringify([this.scope, type, accountKey]))
+      .update(JSON.stringify([this.scope, type, this.grantId ?? accountKey]))
       .digest('hex');
     // Simkl asks clients to fetch movie and show baselines serially.
     const waitFor = simklSyncs.get(accountKey)?.catch(() => undefined);

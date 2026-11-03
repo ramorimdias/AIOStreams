@@ -41,11 +41,10 @@ const fixture = JSON.parse(
   catalog: number[];
 };
 
-const account = { clientId: 'fake-client', accessToken: 'fake-token' };
+import { SimklConnection } from './simkl-connection.js';
 const user = UserDataSchema.parse({
   uuid: 'f353daee-b7e1-4b25-ab79-8109997b7bea',
-  simklClientId: account.clientId,
-  simklAccessToken: account.accessToken,
+
   tmdbApiKey: 'fake-key',
   sortCriteria: { global: [] },
   formatter: { id: 'gdrive' },
@@ -54,6 +53,18 @@ const user = UserDataSchema.parse({
 });
 
 before(async () => {
+  mock.method(
+    SimklConnection,
+    'grantId',
+    async (uuid: string, variant: string) =>
+      variant === 'kids' ? undefined : JSON.stringify([uuid, variant])
+  );
+  mock.method(
+    SimklConnection,
+    'accessToken',
+    async (_uuid: string, variant: string) =>
+      variant === 'viewer' ? 'variant-token' : 'base-token'
+  );
   const version = mock.method(SettingsRepository, 'getVersion', async () => 0);
   const rows = mock.method(SettingsRepository, 'getAll', async () => []);
   try {
@@ -167,22 +178,29 @@ test('catalog registration is opt-in and variant authentication does not fall ba
   const ordinary = await new AIOStreams(disabled).initialise();
   assert.equal(ordinary.getCatalogs().length, 0);
   assert.equal(
-    recommendationManifest({ ...user, activeVariants: ['kids'] }),
+    await recommendationManifest({ ...user, activeVariants: ['kids'] }),
     undefined
   );
   const scoped = {
     ...user,
-    activeVariants: ['kids'],
-    simklVariantAccounts: { kids: account },
+    activeVariants: ['viewer'],
   };
-  assert.equal(recommendationManifest(scoped)?.catalogs.length, 14);
+  assert.equal((await recommendationManifest(scoped))?.catalogs.length, 14);
   const aio = await new AIOStreams(user).initialise();
   const actual = aio
     .getCatalogs()
     .filter(({ id }) => id.startsWith(recommendationSource + '.'));
   assert.equal(actual.length, 14);
   assert.equal(exposedCatalogs(aio).length, 14);
-  const shared = sanitiseTemplateConfig(scoped, () => undefined);
+  const shared = sanitiseTemplateConfig(
+    {
+      ...scoped,
+      simklClientId: 'old-app',
+      simklAccessToken: 'old-token',
+      simklVariantAccounts: { viewer: 'old-grant' },
+    },
+    () => undefined
+  );
   assert.equal(shared.simklAccessToken, undefined);
   assert.equal(shared.simklClientId, undefined);
   assert.equal(shared.simklVariantAccounts, undefined);
@@ -194,20 +212,20 @@ test('catalog registration is opt-in and variant authentication does not fall ba
   }).initialise();
   assert.equal(hidden.getCatalogs().length, 13);
   assert.notEqual(
-    recommendationKey(user, 'movie'),
-    recommendationKey(scoped, 'movie')
+    recommendationKey(user, 'movie', 'base-grant'),
+    recommendationKey(scoped, 'movie', 'base-grant')
   );
   assert.notEqual(
-    recommendationKey(user, 'movie'),
-    recommendationKey(user, 'series')
+    recommendationKey(user, 'movie', 'base-grant'),
+    recommendationKey(user, 'series', 'base-grant')
   );
   assert.notEqual(
-    recommendationKey(user, 'movie'),
-    recommendationKey({ ...user, uuid: 'other' }, 'movie')
+    recommendationKey(user, 'movie', 'base-grant'),
+    recommendationKey({ ...user, uuid: 'other' }, 'movie', 'base-grant')
   );
   assert.notEqual(
-    recommendationKey(user, 'movie'),
-    recommendationKey({ ...user, simklAccessToken: 'rotated' }, 'movie')
+    recommendationKey(user, 'movie', 'base-grant'),
+    recommendationKey(user, 'movie', 'replacement-grant')
   );
 });
 
@@ -370,10 +388,6 @@ test('base and variant account histories produce separate catalogs for the same 
   const base = {
     ...user,
     uuid: 'test-base-and-variant',
-    simklAccessToken: 'base-token',
-    simklVariantAccounts: {
-      viewer: { clientId: 'fake-client', accessToken: 'variant-token' },
-    },
   };
   const [first, second] = await Promise.all([
     getRecommendationCatalog(base, 'movie', 'top'),

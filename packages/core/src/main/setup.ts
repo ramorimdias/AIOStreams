@@ -392,7 +392,7 @@ function buildMergedCatalogExtras(
   return mergedExtras;
 }
 
-export function buildResources(ctx: AIOStreamsContext): void {
+export async function buildResources(ctx: AIOStreamsContext): Promise<void> {
   for (const [instanceId, manifest] of Object.entries(ctx.manifests)) {
     if (!manifest) continue;
 
@@ -527,7 +527,7 @@ export function buildResources(ctx: AIOStreamsContext): void {
     ctx.supportedResources[instanceId] = addonResources;
   }
 
-  const recommendations = recommendationManifest(ctx.userData);
+  const recommendations = await recommendationManifest(ctx.userData, ctx.options?.catalogPreview);
   if (recommendations?.catalogs.length) {
     ctx.manifests[recommendationSource] = recommendations;
     const catalogs = recommendations.catalogs.map((catalog) => ({

@@ -33,6 +33,7 @@ export interface AIOStreamsOptions {
   skipFailedAddons?: boolean;
   increasedManifestTimeout?: boolean;
   bypassManifestCache?: boolean;
+  catalogPreview?: boolean;
   /** Which client path this engine serves, for media info probes. */
   path?: 'stremio' | 'jellyfin';
 }

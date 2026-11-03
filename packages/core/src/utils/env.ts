@@ -223,6 +223,8 @@ export const Env = cleanEnv(process.env, {
     default: 3000,
     desc: 'Port to run the addon on',
   }),
+  SIMKL_CLIENT_ID: str({ default: '', desc: 'Simkl AUTH V2 application client ID for recommendations.' }),
+  SIMKL_CLIENT_SECRET: str({ default: '', desc: 'Simkl AUTH V2 client secret for confidential app registrations.' }),
   SECRET_KEY: secretKey({
     desc: 'Session/encryption secret used to derive keys for stored configurations. Must be a 64-character hex string. Generate with `openssl rand -hex 32`. Cannot be changed after first run. (Legacy alias `SESSION_SECRET` is still accepted for one minor release.)',
     example: 'Generate using: openssl rand -hex 32',

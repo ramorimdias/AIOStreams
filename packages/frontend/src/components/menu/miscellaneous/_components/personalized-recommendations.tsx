@@ -1,5 +1,5 @@
 import type { UserData } from '@aiostreams/core';
-import { PasswordInput } from '@aiostreams/ui/password-input';
+import { SimklConnect } from './simkl-connect';
 import { Select } from '@aiostreams/ui/select';
 import { Switch } from '@aiostreams/ui/switch';
 import { TextInput } from '@aiostreams/ui/text-input';
@@ -10,15 +10,9 @@ import { useState } from 'react';
 type Settings = NonNullable<UserData['personalizedRecommendations']>;
 
 export function PersonalizedRecommendations() {
-  const { userData, setUserData } = useUserData();
+  const { uuid, userData, setUserData } = useUserData();
   const [variant, setVariant] = useState('');
   const settings = userData.personalizedRecommendations ?? {};
-  const account = variant
-    ? userData.simklVariantAccounts?.[variant]
-    : {
-        clientId: userData.simklClientId,
-        accessToken: userData.simklAccessToken,
-      };
   const update = (patch: Partial<Settings>) =>
     setUserData((prev) => ({
       ...prev,
@@ -27,26 +21,6 @@ export function PersonalizedRecommendations() {
         ...patch,
       },
     }));
-  const updateAccount = (key: 'clientId' | 'accessToken', value: string) => {
-    setUserData((prev) => {
-      if (!variant)
-        return {
-          ...prev,
-          [key === 'clientId' ? 'simklClientId' : 'simklAccessToken']:
-            value || undefined,
-        };
-      const accounts = { ...prev.simklVariantAccounts };
-      accounts[variant] = {
-        clientId: accounts[variant]?.clientId ?? '',
-        accessToken: accounts[variant]?.accessToken ?? '',
-        [key]: value,
-      };
-      if (!accounts[variant].clientId && !accounts[variant].accessToken)
-        delete accounts[variant];
-      return { ...prev, simklVariantAccounts: accounts };
-    });
-  };
-
   return (
     <SettingsCard
       id="personalized-recommendations"
@@ -74,23 +48,7 @@ export function PersonalizedRecommendations() {
               })),
             ]}
           />
-          <PasswordInput
-            autoComplete="new-password"
-            label="Simkl client ID"
-            value={account?.clientId}
-            onValueChange={(value) => updateAccount('clientId', value)}
-          />
-          <PasswordInput
-            autoComplete="new-password"
-            label="Simkl OAuth access token"
-            value={account?.accessToken}
-            onValueChange={(value) => updateAccount('accessToken', value)}
-          />
-          <p className="text-sm text-[--muted]">
-            {account?.clientId && account.accessToken
-              ? 'Credentials entered. They are checked when a catalog loads.'
-              : 'Enter both Simkl credentials for this configuration.'}
-          </p>
+          <SimklConnect key={`${uuid}:${variant}`} variant={variant} />
           <Select
             label="Discovery style"
             value={settings.style ?? 'balanced'}

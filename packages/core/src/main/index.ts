@@ -78,7 +78,7 @@ export class AIOStreams {
     await applyPresets(this.ctx);
     await assignPublicIps(this.ctx);
     await fetchManifests(this.ctx);
-    buildResources(this.ctx);
+    await buildResources(this.ctx);
     this.ctx.isInitialised = true;
     return this;
   }
