@@ -21,6 +21,8 @@ export * from './proxy/index.js';
 export * from './linked-accounts/index.js';
 export { RecommendationTmdb } from './recommendations/sources.js';
 export { recommendationCatalogPreviews } from './recommendations/catalogs.js';
+export { builtinSimklSink } from './watch-state/handoff/simkl.js';
+export { simklVariant } from './recommendations/catalogs.js';
 export { SimklConnection } from './recommendations/simkl-connection.js';
 export * from './community/index.js';
 export * from './app-reports/index.js';

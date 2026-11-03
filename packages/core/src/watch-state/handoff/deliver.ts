@@ -8,6 +8,7 @@ import {
   type SinkStatus,
 } from '../../db/repositories/playback-handoff.js';
 import { TaskManager } from '../../tasks/index.js';
+import { isBuiltinSimkl, pushBuiltinSimkl } from './simkl.js';
 import { randomUUID } from 'node:crypto';
 
 const logger = createLogger('playback-handoff');
@@ -39,19 +40,21 @@ function retryAfterMs(header: string | null): number | undefined {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
 
-async function deliverOne(row: DeliveryRow): Promise<Outcome> {
+async function deliverOne(sink: SinkRow, row: DeliveryRow): Promise<Outcome> {
   let res: Response;
   try {
-    res = await makeRequest(row.url, {
-      method: 'POST',
-      body: row.body,
-      timeout: REQUEST_TIMEOUT_MS,
-      headers: { 'Content-Type': 'application/json' },
-      // Server-initiated and retried on its own schedule, so neither the
-      // recursion guard nor 429 cooldowns apply.
-      ignoreRecursion: true,
-      ignoreCooldown: true,
-    });
+    res = isBuiltinSimkl(sink)
+      ? await pushBuiltinSimkl(sink, row.body)
+      : await makeRequest(row.url, {
+          method: 'POST',
+          body: row.body,
+          timeout: REQUEST_TIMEOUT_MS,
+          headers: { 'Content-Type': 'application/json' },
+          // Server-initiated and retried on its own schedule, so neither the
+          // recursion guard nor 429 cooldowns apply.
+          ignoreRecursion: true,
+          ignoreCooldown: true,
+        });
   } catch (error) {
     return {
       kind: 'retry',
@@ -121,7 +124,7 @@ async function deliverSink(
     for (const row of rows) {
       if (Date.now() >= until) return served(true);
       attempted = true;
-      const outcome = await deliverOne(row);
+      const outcome = await deliverOne(sink, row);
       const at = Date.now();
 
       if (outcome.kind === 'delivered') {

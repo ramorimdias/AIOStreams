@@ -11,7 +11,7 @@ const variantSchema = z.union([
 ]);
 
 function handle(
-  action: (uuid: string, variant: string) => Promise<unknown>,
+  action: (uuid: string, variant: string, req: Request) => Promise<unknown>,
   failure: string
 ) {
   return async (req: Request, res: Response) => {
@@ -20,14 +20,12 @@ function handle(
       allowEncrypted: false,
     });
     if (!creds) {
-      res
-        .status(401)
-        .json(
-          createResponse({
-            success: false,
-            detail: 'Sign in to a saved configuration first.',
-          })
-        );
+      res.status(401).json(
+        createResponse({
+          success: false,
+          detail: 'Sign in to a saved configuration first.',
+        })
+      );
       return;
     }
     const uuid = creds.uuid;
@@ -37,31 +35,27 @@ function handle(
         : (req.body?.variant ?? '')
     );
     if (!variant.success) {
-      res
-        .status(400)
-        .json(
-          createResponse({
-            success: false,
-            detail: 'Invalid configuration variant.',
-          })
-        );
+      res.status(400).json(
+        createResponse({
+          success: false,
+          detail: 'Invalid configuration variant.',
+        })
+      );
       return;
     }
     try {
       await UserRepository.verifyUser(uuid, creds.password);
     } catch {
-      res
-        .status(401)
-        .json(
-          createResponse({
-            success: false,
-            detail: 'Sign in to a saved configuration first.',
-          })
-        );
+      res.status(401).json(
+        createResponse({
+          success: false,
+          detail: 'Sign in to a saved configuration first.',
+        })
+      );
       return;
     }
     try {
-      const data = await action(uuid, variant.data);
+      const data = await action(uuid, variant.data, req);
       res.status(200).json(createResponse({ success: true, data }));
     } catch {
       res.status(400).json(createResponse({ success: false, detail: failure }));
@@ -74,6 +68,7 @@ router.get(
   handle(
     async (uuid, variant) => ({
       configured: SimklConnection.configured(),
+      tracker: Boolean(await SimklConnection.trackerGrant(uuid, variant)),
       connected: Boolean(await SimklConnection.grantId(uuid, variant)),
     }),
     'Could not read the Simkl connection.'
@@ -82,7 +77,8 @@ router.get(
 router.post(
   '/start',
   handle(
-    (uuid, variant) => SimklConnection.start(uuid, variant),
+    (uuid, variant, req) =>
+      SimklConnection.start(uuid, variant, req.body?.tracker === true),
     'Could not start Simkl authorization. Check the instance app registration.'
   )
 );

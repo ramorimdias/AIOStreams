@@ -711,14 +711,14 @@ function authed(credentials: Credentials) {
 }
 
 export function getSimklStatus(credentials: Credentials, variant: string) {
-  return api<{ configured: boolean; connected: boolean }>(
+  return api<{ configured: boolean; connected: boolean; tracker: boolean }>(
     `GET /simkl?variant=${encodeURIComponent(variant)}`, authed(credentials)
   );
 }
 
-export function startSimklConnection(credentials: Credentials, variant: string) {
+export function startSimklConnection(credentials: Credentials, variant: string, tracker = false) {
   return api<{ code: string; url: string; interval: number; expiresIn: number }>(
-    'POST /simkl/start', { ...authed(credentials), body: { variant } }
+    'POST /simkl/start', { ...authed(credentials), body: { variant, tracker } }
   );
 }
 

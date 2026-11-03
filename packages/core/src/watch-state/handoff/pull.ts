@@ -6,6 +6,7 @@ import { readBodyCapped } from '../../utils/safe-fetch.js';
 import { getDb } from '../../db/db.js';
 import { TaskManager } from '../../tasks/index.js';
 import { randomUUID } from 'node:crypto';
+import { isBuiltinSimkl, pullBuiltinSimkl } from './simkl.js';
 import { sinkProbeMs } from './deliver.js';
 import type { DbDriver } from '../../db/driver/types.js';
 import type { SqlFragment } from '../../db/sql.js';
@@ -836,8 +837,28 @@ async function importDropped(
 
 async function fetchState(sink: SinkRow): Promise<PlaybackStatePayload | null> {
   if (!sink.pullUrl) return null;
-  const url = new URL(sink.pullUrl);
-  if (sink.pullVersion) url.searchParams.set('since', sink.pullVersion);
+  const data = isBuiltinSimkl(sink)
+    ? await pullBuiltinSimkl(sink)
+    : await fetchAddonState(sink.pullUrl, sink.pullVersion);
+  const cfg = appConfig.watchState;
+  const watched = data.watched;
+  const counts: [string, number, number][] = [
+    ['items', data.items?.length ?? 0, cfg.pullMaxItems],
+    ['movies', watched?.movies?.length ?? 0, cfg.pullMaxWatched],
+    ['episodes', watched?.episodes?.length ?? 0, cfg.pullMaxWatched],
+    ['watchlist', data.watchlist?.length ?? 0, cfg.pullMaxWatched],
+    ['dropped', watched?.dropped?.length ?? 0, cfg.pullMaxWatched],
+    ['ratings', data.ratings?.length ?? 0, cfg.pullMaxWatched],
+  ];
+  for (const [what, got, max] of counts) {
+    if (got > max) throw new Error(`${what} list of ${got} exceeds ${max}`);
+  }
+  return data;
+}
+
+async function fetchAddonState(pullUrl: string, pullVersion: string | null) {
+  const url = new URL(pullUrl);
+  if (pullVersion) url.searchParams.set('since', pullVersion);
 
   const res = await makeRequest(url.toString(), {
     method: 'GET',
@@ -861,19 +882,6 @@ async function fetchState(sink: SinkRow): Promise<PlaybackStatePayload | null> {
   );
   if (!parsed.success) throw new Error('unreadable state payload');
 
-  const cfg = appConfig.watchState;
-  const watched = parsed.data.watched;
-  const counts: [string, number, number][] = [
-    ['items', parsed.data.items?.length ?? 0, cfg.pullMaxItems],
-    ['movies', watched?.movies?.length ?? 0, cfg.pullMaxWatched],
-    ['episodes', watched?.episodes?.length ?? 0, cfg.pullMaxWatched],
-    ['watchlist', parsed.data.watchlist?.length ?? 0, cfg.pullMaxWatched],
-    ['dropped', watched?.dropped?.length ?? 0, cfg.pullMaxWatched],
-    ['ratings', parsed.data.ratings?.length ?? 0, cfg.pullMaxWatched],
-  ];
-  for (const [what, got, max] of counts) {
-    if (got > max) throw new Error(`${what} list of ${got} exceeds ${max}`);
-  }
   return parsed.data;
 }
 

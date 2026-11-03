@@ -51,25 +51,19 @@ export function PersonalizedRecommendations() {
           value={!!settings.enabled}
           onValueChange={(enabled) => update({ enabled })}
         />
-        {settings.enabled && (
-          <>
-            <Select
-              label="Simkl account and catalog scope"
-              value={variant || '__base'}
-              onValueChange={(value) =>
-                setVariant(value === '__base' ? '' : value)
-              }
-              options={[
-                { value: '__base', label: 'Base configuration' },
-                ...(userData.variants ?? []).map(({ id, name }) => ({
-                  value: id,
-                  label: name ?? id,
-                })),
-              ]}
-            />
-            <SimklConnect key={`${uuid}:${variant}`} variant={variant} />
-          </>
-        )}
+        <Select
+          label="Simkl account and catalog scope"
+          value={variant || '__base'}
+          onValueChange={(value) => setVariant(value === '__base' ? '' : value)}
+          options={[
+            { value: '__base', label: 'Base configuration' },
+            ...(userData.variants ?? []).map(({ id, name }) => ({
+              value: id,
+              label: name ?? id,
+            })),
+          ]}
+        />
+        <SimklConnect key={`${uuid}:${variant}`} variant={variant} />
       </SettingsCard>
       {settings.enabled && (
         <>

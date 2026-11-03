@@ -16,11 +16,13 @@ const tokenResponse = z.object({
   access_token: z.string().min(1),
   refresh_token: z.string().min(1),
   expires_in: z.number().positive(),
+  scope: z.string().optional(),
 });
 const credentialSchema = z.object({
   accessToken: z.string(),
   refreshToken: z.string(),
   expiresAt: z.number(),
+  writable: z.boolean().optional(),
 });
 
 type DeviceFlow = {
@@ -30,6 +32,7 @@ type DeviceFlow = {
   nextPoll: number;
   expiresAt: number;
   polling: boolean;
+  tracker: boolean;
 };
 const flows = Cache.getInstance<string, DeviceFlow>(
   'simkl_device_flow',
@@ -56,6 +59,7 @@ function tokenData(raw: unknown) {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    writable: data.scope?.split(/\s+/).includes('media:write'),
   };
 }
 
@@ -102,10 +106,28 @@ export class SimklConnection {
     return row?.grant_id;
   }
 
-  static async start(uuid: string, variant: string) {
+  static async trackerGrant(uuid: string, variant: string, grantId?: string) {
+    if (!bootstrap.simklClientId) return;
+    const row = await getDb().maybeOne<{
+      grant_id: string;
+      credentials: string;
+    }>(
+      sql`SELECT grant_id, credentials FROM simkl_connections WHERE uuid = ${uuid}
+        AND variant = ${variant} AND client_id = ${bootstrap.simklClientId}`
+    );
+    if (!row || (grantId && row.grant_id !== grantId)) return;
+    const decrypted = decryptString(row.credentials);
+    if (!decrypted.success) return;
+    const stored = credentialSchema.safeParse(JSON.parse(decrypted.data));
+    if (stored.success && stored.data.writable) return row.grant_id;
+  }
+
+  static async start(uuid: string, variant: string, tracker = false) {
     const clientId = bootstrap.simklClientId;
     if (!clientId) throw new Error('Simkl is not configured on this instance.');
-    const result = await request('device', { scope: 'media:read' });
+    const result = await request('device', {
+      scope: tracker ? 'media:read media:write' : 'media:read',
+    });
     if (!result.ok) throw new Error('Simkl could not start authorization.');
     const response = deviceResponse.parse(result.data);
     const interval = response.interval * 1000;
@@ -118,6 +140,7 @@ export class SimklConnection {
         nextPoll: Date.now() + interval,
         expiresAt: Date.now() + response.expires_in * 1000,
         polling: false,
+        tracker,
       },
       response.expires_in
     );
@@ -169,7 +192,12 @@ export class SimklConnection {
         await flows.delete(key);
         throw new Error('Simkl authorization failed. Start a new connection.');
       }
-      const encrypted = seal(tokenData(result.data));
+      const credentials = tokenData(result.data);
+      if (flow.tracker && !credentials.writable) {
+        await flows.delete(key);
+        throw new Error('Simkl did not grant write access.');
+      }
+      const encrypted = seal({ ...credentials, writable: flow.tracker });
       await getDb()
         .exec(sql`INSERT INTO simkl_connections (uuid, variant, client_id, grant_id, credentials)
         VALUES (${uuid}, ${variant}, ${flow.clientId}, ${randomUUID()}, ${encrypted})
@@ -244,7 +272,11 @@ export class SimklConnection {
       return;
     }
     if (!result.ok) throw new Error('Simkl token refresh failed.');
-    const updated = tokenData(result.data);
+    const renewed = tokenData(result.data);
+    const updated = {
+      ...renewed,
+      writable: Boolean(stored.writable && renewed.writable !== false),
+    };
     await getDb()
       .exec(sql`UPDATE simkl_connections SET credentials = ${seal(updated)}
       WHERE uuid = ${uuid} AND variant = ${variant} AND grant_id = ${grantId} AND credentials = ${row.credentials}`);

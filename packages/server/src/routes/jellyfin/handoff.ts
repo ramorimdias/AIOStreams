@@ -1,5 +1,7 @@
 import type { Request } from 'express';
 import {
+  builtinSimklSink,
+  simklVariant,
   Cache,
   config as appConfig,
   createLogger,
@@ -173,27 +175,59 @@ async function resolveSinks(
   return { sinks, unloaded: unloaded(engine, undefined) };
 }
 
+function builtinVariant(ctx: JellyfinRequestContext): string | undefined {
+  if (ctx.persona?.history === 'shared') return;
+  const variant = simklVariant(ctx.userData);
+  const primaryVariants = ctx.userData.jellyfin?.primary?.variants ?? [];
+  const selected = ctx.persona ? (ctx.persona.variants ?? []) : primaryVariants;
+  // Automatic variants must never select a tracker account.
+  if (variant ? !selected.includes(variant) : ctx.persona || selected.length)
+    return;
+  if (ctx.persona && primaryVariants.includes(variant)) return;
+  if (
+    variant &&
+    personasOf(ctx.userData).some(
+      (persona) =>
+        persona.id !== ctx.persona?.id && persona.variants?.includes(variant)
+    )
+  )
+    return;
+  return variant;
+}
+
 async function sinksFor(
   ctx: JellyfinRequestContext
 ): Promise<ResolvedPlaybackSink[]> {
   const mode = modeOf(ctx);
   // Personas without variants share a scope but not their trackers.
-  const key = `${ctx.scope()}|${mode}|${ctx.persona?.id ?? ''}`;
+  const variant = builtinVariant(ctx);
+  const builtin =
+    variant === undefined
+      ? undefined
+      : await builtinSimklSink(ctx.uuid, variant);
+  const key = `${ctx.scope()}|${mode}|${ctx.persona?.id ?? ''}|${builtin?.instanceId ?? ''}`;
   const cached = await sinkCache.get(key).catch(() => undefined);
   // A value that lost its `events` array in transit counts as a miss.
   if (cached?.every((sink) => Array.isArray(sink.events))) return cached;
-  const resolved = await resolveSinks(ctx, mode);
-  const sinks = resolved.sinks.slice(0, appConfig.watchState.maxSinks);
+  const resolved = builtin
+    ? { sinks: [], unloaded: [] }
+    : await resolveSinks(ctx, mode);
+  // A linked built-in account is the tracker for this history. AIOMetadata
+  // continues to serve metadata through the normal addon engine.
+  const sinks = builtin
+    ? [builtin]
+    : resolved.sinks.slice(0, appConfig.watchState.maxSinks);
   const unloaded = resolved.unloaded;
-  await retireUnusedSinks(ctx.watch, [
-    ...sinks.map((sink) => sink.instanceId),
-    ...unloaded,
-  ]).catch((error) => {
-    logger.warn(
-      { err: error instanceof Error ? error.message : String(error) },
-      'failed to retire unused trackers'
-    );
-  });
+  if (mode !== 'shared')
+    await retireUnusedSinks(ctx.watch, [
+      ...sinks.map((sink) => sink.instanceId),
+      ...unloaded,
+    ]).catch((error) => {
+      logger.warn(
+        { err: error instanceof Error ? error.message : String(error) },
+        'failed to retire unused trackers'
+      );
+    });
   await sinkCache.set(key, sinks, SINK_TTL_SECONDS).catch(() => undefined);
   return sinks;
 }

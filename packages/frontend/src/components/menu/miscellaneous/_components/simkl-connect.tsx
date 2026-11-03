@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Switch } from '@aiostreams/ui/switch';
 import { Button } from '@aiostreams/ui/button';
 import { toast } from 'sonner';
 import { useUserData } from '@/context/userData';
@@ -21,6 +22,7 @@ export function SimklConnect({ variant }: { variant: string }) {
   });
   const [flow, setFlow] =
     useState<Awaited<ReturnType<typeof startSimklConnection>>>();
+  const [trackerChoice, setTrackerChoice] = useState<boolean>();
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(false);
 
@@ -49,9 +51,23 @@ export function SimklConnect({ variant }: { variant: string }) {
       </p>
     );
 
+  const tracker = trackerChoice ?? status.data.tracker;
+  const needsConnection =
+    !status.data.connected || tracker !== status.data.tracker;
   return (
     <div className="space-y-2">
-      {status.data.connected ? (
+      <Switch
+        label="Built-in Simkl tracker for Jellyfin"
+        value={tracker}
+        disabled={busy || Boolean(flow)}
+        onValueChange={setTrackerChoice}
+      />
+      <p className="text-sm text-gray-500">
+        Sync watched history and playback progress with this Simkl account. Use
+        a dedicated variant for each Jellyfin user with a separate history.
+        Changing this option requires authorizing Simkl again.
+      </p>
+      {status.data.connected && (
         <>
           <p>Simkl connected for this configuration scope.</p>
           <Button
@@ -67,17 +83,24 @@ export function SimklConnect({ variant }: { variant: string }) {
             Disconnect Simkl
           </Button>
         </>
-      ) : (
+      )}
+      {needsConnection && (
         <Button
           disabled={busy}
           onClick={() =>
             void run(async () => {
-              setFlow(await startSimklConnection(credentials, variant));
+              setFlow(
+                await startSimklConnection(credentials, variant, tracker)
+              );
               setPending(false);
             })
           }
         >
-          {flow ? 'Get a new code' : 'Connect Simkl'}
+          {flow
+            ? 'Get a new code'
+            : status.data.connected
+              ? 'Reauthorize Simkl'
+              : 'Connect Simkl'}
         </Button>
       )}
       {flow && (
