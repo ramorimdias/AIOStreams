@@ -1,4 +1,5 @@
 import { CatalogModification, UserData } from '@aiostreams/core';
+export { isRecommendationCatalog } from '../../../../../../core/src/recommendations/rows';
 
 export const catalogKey = (c: Pick<CatalogModification, 'id' | 'type'>) =>
   `${c.id}-${c.type}`;

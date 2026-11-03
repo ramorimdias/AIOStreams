@@ -22,18 +22,15 @@ import {
 import { bootstrap } from '../config/bootstrap.js';
 import { SimklConnection } from './simkl-connection.js';
 
-export const recommendationSource = 'aiostreams-recommendations';
-const rows = {
-  top: 'Top Picks for You',
-  watched: 'Because You Watched',
-  loved: 'Because You Loved',
-  genres: 'Your Favorite Genres',
-  themes: 'Your Favorite Themes',
-  creators: 'From Your Favorite Creators',
-  positive: 'Based on What You Loved/Liked',
-};
-type Row = keyof typeof rows;
-const rowIds = Object.keys(rows) as Row[];
+import {
+  genreRows,
+  themeRows,
+  recommendationRows as rows,
+  recommendationRowIds as rowIds,
+  recommendationSourceId,
+  type RecommendationRow as Row,
+} from './rows.js';
+export { recommendationSource, isRecommendationCatalog } from './rows.js';
 const types: MediaType[] = ['movie', 'series'];
 type Settings = NonNullable<UserData['personalizedRecommendations']>;
 type Snapshot = {
@@ -41,6 +38,7 @@ type Snapshot = {
   generatedAt: number;
   fingerprint: string;
   rows: Record<Row, MetaPreview[]>;
+  names?: Partial<Record<Row, string>>;
 };
 const snapshots = Cache.getInstance<string, Snapshot>(
   'personalized_recommendations',
@@ -54,42 +52,110 @@ const retryAfter = Cache.getInstance<string, boolean>(
   'memory'
 );
 const limit = 24;
+const namedRows: ReadonlySet<Row> = new Set([...genreRows, ...themeRows]);
 
-function simklVariant(user: UserData) {
+export function simklVariant(user: UserData) {
   const variants = user.activeVariants?.length
     ? user.activeVariants
     : user.autoVariants;
   return variants?.at(-1) ?? '';
 }
 
+function catalogEnabled(
+  user: UserData,
+  source: string,
+  type: string,
+  row: Row
+) {
+  return (
+    user.catalogModifications?.find(
+      (item) => item.id === source + '.' + row && item.type === type
+    )?.enabled !== false
+  );
+}
+
 export async function recommendationManifest(
   user: UserData,
-  preview = false
+  refreshEmpty = true
 ): Promise<Manifest | undefined> {
-  if (!user.personalizedRecommendations?.enabled) return;
-  if (
-    preview
-      ? !SimklConnection.configured()
-      : !user.uuid ||
-        !(await SimklConnection.grantId(user.uuid, simklVariant(user)))
-  )
-    return;
+  if (!user.personalizedRecommendations?.enabled || !user.uuid) return;
+  const variant = simklVariant(user);
+  const grant = await SimklConnection.grantId(user.uuid, variant);
+  if (!grant) return;
+  const source = recommendationSourceId(variant);
+  const catalogs = await Promise.all(
+    types.map(async (type) => {
+      const cached = await snapshots.get(recommendationKey(user, type, grant));
+      const enabled = rowIds.filter((id) =>
+        catalogEnabled(user, source, type, id)
+      );
+      const available = enabled.filter(
+        (id) =>
+          !namedRows.has(id) ||
+          !cached ||
+          (cached.names?.[id] && cached.rows[id]?.length)
+      );
+      // A viewer who enables only genre or theme rows still needs a refresh
+      // after the current snapshot has no matches and advertises no catalogs.
+      if (refreshEmpty && enabled.length && !available.length) {
+        void getRecommendationCatalog(user, type, enabled[0]).catch(
+          () => undefined
+        );
+      }
+      return available.map((id) => ({
+        id,
+        type,
+        name: cached?.names?.[id] ?? rows[id],
+      }));
+    })
+  );
   return {
-    id: recommendationSource,
-    name: 'Personalized Recommendations',
+    id: source,
+    name:
+      'Recommendations (' +
+      (user.variants?.find(({ id }) => id === variant)?.name ||
+        variant ||
+        'Base') +
+      ')',
     version: '1.0.0',
     types,
     resources: ['catalog'],
-    catalogs: types.flatMap((type) =>
-      rowIds.map((id) => ({
-        id,
-        type,
-        name: rows[id],
-      }))
-    ),
+    catalogs: catalogs.flat(),
   };
 }
 
+export async function recommendationCatalogPreviews(user: UserData) {
+  if (!user.uuid || !user.personalizedRecommendations?.enabled) return [];
+  const scopes = [
+    '',
+    ...(user.variants ?? [])
+      .filter((variant) => variant.enabled !== false)
+      .map(({ id }) => id),
+  ];
+  const manifests = await Promise.all(
+    scopes.map((variant) =>
+      recommendationManifest(
+        {
+          ...user,
+          activeVariants: variant ? [variant] : undefined,
+          autoVariants: undefined,
+        },
+        false
+      )
+    )
+  );
+  return manifests.flatMap(
+    (manifest) =>
+      manifest?.catalogs.map((catalog) => ({
+        ...catalog,
+        id: manifest.id + '.' + catalog.id,
+        addonName: manifest.name,
+        hideable: true,
+        genreRequired: false,
+        searchable: false,
+      })) ?? []
+  );
+}
 export function recommendationKey(
   user: UserData,
   type: MediaType,
@@ -199,7 +265,11 @@ async function refresh(
     watched: [],
     loved: [],
     genres: [],
+    'genres-2': [],
+    'genres-3': [],
     themes: [],
+    'themes-2': [],
+    'themes-3': [],
     creators: [],
     positive: [],
   };
@@ -231,14 +301,17 @@ async function refresh(
     (a, b) => (b.history.watchedAt ?? 0) - (a.history.watchedAt ?? 0)
   );
   const profile = buildProfile(enriched, type, now);
-  const recent = enriched.find(
-    ({ history: item }) => item.watchedAt !== undefined
-  )?.title;
   const favorites = enriched
     .filter(({ history: item }) => positive.includes(item))
     .sort((a, b) => (b.history.rating ?? 0) - (a.history.rating ?? 0));
-  const loved = favorites.find(
+  const loved = enriched.find(
     ({ history: item }) => (item.rating ?? 0) >= 9 || item.plays >= 2
+  )?.title;
+  const watchedSeeds = enriched.filter(
+    ({ history: item }) => item.watchedAt !== undefined
+  );
+  const recent = (
+    watchedSeeds.find(({ title }) => title.id !== loved?.id) ?? watchedSeeds[0]
   )?.title;
   const seeds = [
     ...new Set([
@@ -267,8 +340,27 @@ async function refresh(
   if (settings.excludedKeywords?.length)
     params.without_keywords = settings.excludedKeywords.join(',');
 
-  const genres = preferred(profile, 'genres');
-  const themes = preferred(profile, 'keywords');
+  const genres = preferred(profile, 'genres', 30)
+    .filter((id) => !excluded?.includes(id))
+    .slice(0, genreRows.length);
+  const themes = preferred(profile, 'keywords', 30)
+    .filter((id) => !settings.excludedKeywords?.includes(id))
+    .slice(0, themeRows.length);
+  const names: Snapshot['names'] = {};
+  if (recent) names.watched = 'Because you watched ' + recent.name;
+  if (loved) names.loved = 'Because you loved ' + loved.name;
+  const titleCase = (name: string) =>
+    name.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+  genres.forEach((id, index) => {
+    const name = enriched.find(({ title }) => title.genreNames?.[id])?.title
+      .genreNames?.[id];
+    if (name) names[genreRows[index]] = name;
+  });
+  themes.forEach((id, index) => {
+    const name = enriched.find(({ title }) => title.keywordNames?.[id])?.title
+      .keywordNames?.[id];
+    if (name) names[themeRows[index]] = titleCase(name);
+  });
   const creators = [
     ...new Set([
       ...preferred(profile, 'directors', 3, 2),
@@ -298,12 +390,12 @@ async function refresh(
           },
         ]
       : []),
-    ...genres.map((id) => ({
-      row: 'genres' as const,
+    ...genres.map((id, index) => ({
+      row: genreRows[index],
       filter: { with_genres: id },
     })),
-    ...themes.map((id) => ({
-      row: 'themes' as const,
+    ...themes.map((id, index) => ({
+      row: themeRows[index],
       filter: { with_keywords: id },
     })),
     ...creators.map((id) => ({
@@ -337,12 +429,12 @@ async function refresh(
     ],
     watched: recent ? (source.get(recent.id) ?? []) : [],
     loved: loved ? (source.get(loved.id) ?? []) : [],
-    genres: discovered
-      .filter(({ row }) => row === 'genres')
-      .flatMap(({ titles }) => titles),
-    themes: discovered
-      .filter(({ row }) => row === 'themes')
-      .flatMap(({ titles }) => titles),
+    genres: discovered.find(({ row }) => row === 'genres')?.titles ?? [],
+    'genres-2': discovered.find(({ row }) => row === 'genres-2')?.titles ?? [],
+    'genres-3': discovered.find(({ row }) => row === 'genres-3')?.titles ?? [],
+    themes: discovered.find(({ row }) => row === 'themes')?.titles ?? [],
+    'themes-2': discovered.find(({ row }) => row === 'themes-2')?.titles ?? [],
+    'themes-3': discovered.find(({ row }) => row === 'themes-3')?.titles ?? [],
     creators: discovered
       .filter(({ row }) => row === 'creators')
       .flatMap(({ titles }) => titles),
@@ -392,7 +484,7 @@ async function refresh(
       releaseInfo: item.year,
     }));
   }
-  return { checkedAt: now, generatedAt: now, fingerprint, rows: empty };
+  return { checkedAt: now, generatedAt: now, fingerprint, rows: empty, names };
 }
 
 export async function getRecommendationCatalog(
@@ -404,7 +496,13 @@ export async function getRecommendationCatalog(
     !user.uuid ||
     !user.personalizedRecommendations?.enabled ||
     !types.includes(type as MediaType) ||
-    !rowIds.includes(id as Row)
+    !rowIds.includes(id as Row) ||
+    !catalogEnabled(
+      user,
+      recommendationSourceId(simklVariant(user)),
+      type,
+      id as Row
+    )
   )
     return [];
   const grantId = await SimklConnection.grantId(user.uuid, simklVariant(user));

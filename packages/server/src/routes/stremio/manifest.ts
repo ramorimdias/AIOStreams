@@ -73,6 +73,9 @@ router.get(
   async (req: Request, res: Response<Manifest>, next: NextFunction) => {
     logger.info({ uuid: req.userData?.uuid }, 'received request for manifest');
     try {
+      if (req.userData?.personalizedRecommendations?.enabled) {
+        res.setHeader('Cache-Control', 'private, no-store');
+      }
       res.status(200).json(await manifest(req.userData));
     } catch (error) {
       logger.error(`Failed to generate manifest: ${error}`);

@@ -24,7 +24,9 @@ export type Title = {
   poster?: string;
   year?: number;
   genres: string[];
+  genreNames?: Record<string, string>;
   keywords: string[];
+  keywordNames?: Record<string, string>;
   cast: string[];
   directors: string[];
   countries: string[];

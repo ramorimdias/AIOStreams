@@ -12,6 +12,7 @@ import {
   getRecommendationCatalog,
   recommendationKey,
   recommendationManifest,
+  recommendationCatalogPreviews,
   recommendationSource,
 } from './catalogs.js';
 import {
@@ -185,13 +186,13 @@ test('catalog registration is opt-in and variant authentication does not fall ba
     ...user,
     activeVariants: ['viewer'],
   };
-  assert.equal((await recommendationManifest(scoped))?.catalogs.length, 14);
+  assert.equal((await recommendationManifest(scoped))?.catalogs.length, 22);
   const aio = await new AIOStreams(user).initialise();
   const actual = aio
     .getCatalogs()
     .filter(({ id }) => id.startsWith(recommendationSource + '.'));
-  assert.equal(actual.length, 14);
-  assert.equal(exposedCatalogs(aio).length, 14);
+  assert.equal(actual.length, 22);
+  assert.equal(exposedCatalogs(aio).length, 22);
   const shared = sanitiseTemplateConfig(
     {
       ...scoped,
@@ -210,7 +211,46 @@ test('catalog registration is opt-in and variant authentication does not fall ba
       { id: recommendationSource + '.top', type: 'movie', enabled: false },
     ],
   }).initialise();
-  assert.equal(hidden.getCatalogs().length, 13);
+  assert.equal(hidden.getCatalogs().length, 21);
+  const viewer = await new AIOStreams(scoped).initialise();
+  assert.ok(
+    viewer
+      .getCatalogs()
+      .every(({ id }) => id.startsWith(recommendationSource + '-viewer.'))
+  );
+  assert.deepEqual(
+    (await viewer.getCatalog('movie', recommendationSource + '.top')).data,
+    []
+  );
+  const previews = await recommendationCatalogPreviews({
+    ...user,
+    variants: [
+      { id: 'viewer', name: 'Family', script: '' },
+      { id: 'kids', script: '' },
+    ],
+    catalogModifications: [
+      {
+        id: recommendationSource + '-viewer.top',
+        type: 'movie',
+        enabled: false,
+      },
+    ],
+  });
+  assert.ok(
+    previews.some(({ addonName }) => addonName === 'Recommendations (Family)')
+  );
+  assert.ok(
+    previews.some(({ addonName }) => addonName === 'Recommendations (Base)')
+  );
+  assert.ok(
+    !previews.some(
+      ({ id, type }) =>
+        id === recommendationSource + '-viewer.top' && type === 'movie'
+    )
+  );
+  assert.ok(
+    !previews.some(({ id }) => id.startsWith(recommendationSource + '-kids.'))
+  );
   assert.notEqual(
     recommendationKey(user, 'movie', 'base-grant'),
     recommendationKey(scoped, 'movie', 'base-grant')
@@ -235,7 +275,12 @@ test('catalogs share a cold refresh and return stale rows through an outage', as
     uuid: 'cold-refresh',
     personalizedRecommendations: { enabled: true, refreshHours: 1 },
   };
-  const seed = fixture.titles[0];
+  const seed = {
+    ...fixture.titles[0],
+    name: 'Friends',
+    genreNames: { '28': 'Action', '18': 'Drama' },
+    keywordNames: { '7': 'friendship' },
+  };
   const candidate = fixture.candidates[0];
   let upstreamFailure = false;
   const history = t.mock.method(SimklHistory.prototype, 'history', async () => {
@@ -270,6 +315,33 @@ test('catalogs share a cold refresh and return stale rows through an outage', as
   }
   assert.deepEqual(creators, []);
   const engine = await new AIOStreams(scoped).initialise();
+  const names = Object.fromEntries(
+    engine
+      .getCatalogs()
+      .filter(({ type }) => type === 'movie')
+      .map(({ id, name }) => [id.split('.').at(-1), name])
+  );
+  assert.equal(names.watched, 'Because you watched Friends');
+  assert.equal(names.loved, 'Because you loved Friends');
+  assert.equal(names.genres, 'Action');
+  assert.equal(names['genres-2'], 'Drama');
+  assert.equal(names.themes, 'Friendship');
+  assert.equal(names['themes-2'], undefined);
+  const muted = {
+    ...scoped,
+    catalogModifications: [
+      { id: recommendationSource + '.watched', type: 'movie', enabled: false },
+    ],
+  };
+  assert.deepEqual(
+    await getRecommendationCatalog(muted, 'movie', 'watched'),
+    []
+  );
+  assert.ok(
+    !(await recommendationManifest(muted))?.catalogs.some(
+      ({ id, type }) => id === 'watched' && type === 'movie'
+    )
+  );
   const catalog = exposedCatalogs(engine).find(
     ({ id, type }) => id === recommendationSource + '.top' && type === 'movie'
   )!;

@@ -26,8 +26,11 @@ import {
 
 import {
   getRecommendationCatalog,
-  recommendationSource,
+  isRecommendationCatalog,
+  simklVariant,
 } from '../recommendations/catalogs.js';
+
+import { recommendationSourceId } from '../recommendations/rows.js';
 
 const logger = createLogger('core');
 
@@ -103,7 +106,9 @@ export async function fetchRawCatalogItems(
   items: MetaPreview[];
   error?: { title: string; description: string };
 }> {
-  if (addonInstanceId === recommendationSource) {
+  if (isRecommendationCatalog(addonInstanceId)) {
+    if (addonInstanceId !== recommendationSourceId(simklVariant(ctx.userData)))
+      return { success: true, items: [] };
     const modification = ctx.userData.catalogModifications?.find(
       (item) =>
         item.id === `${addonInstanceId}.${catalogId}` &&
@@ -824,7 +829,7 @@ export async function getCatalog(
   }
 
   const shuffleId =
-    addonInstanceId === recommendationSource ? id : actualCatalogId;
+    isRecommendationCatalog(addonInstanceId) ? id : actualCatalogId;
   const shuffleCacheKey = `${type}-${shuffleId}-${parsedExtras?.toString() || ''}-${userScopeKey(ctx.userData)}`;
 
   const catalog = await applyCatalogModifications(

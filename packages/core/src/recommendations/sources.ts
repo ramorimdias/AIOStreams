@@ -230,7 +230,9 @@ const rawTitle = z.object({
   original_language: z.string().optional(),
   runtime: z.number().nullish(),
   episode_run_time: z.array(z.number()).optional(),
-  genres: z.array(z.object({ id: z.number() })).optional(),
+  genres: z
+    .array(z.object({ id: z.number(), name: z.string().optional() }))
+    .optional(),
   genre_ids: z.array(z.number()).optional(),
   production_countries: z
     .array(z.object({ iso_3166_1: z.string() }))
@@ -238,8 +240,12 @@ const rawTitle = z.object({
   origin_country: z.array(z.string()).optional(),
   keywords: z
     .object({
-      keywords: z.array(z.object({ id: z.number() })).optional(),
-      results: z.array(z.object({ id: z.number() })).optional(),
+      keywords: z
+        .array(z.object({ id: z.number(), name: z.string().optional() }))
+        .optional(),
+      results: z
+        .array(z.object({ id: z.number(), name: z.string().optional() }))
+        .optional(),
     })
     .optional(),
   credits: z
@@ -270,6 +276,14 @@ function title(raw: z.infer<typeof rawTitle>): Title {
     year: year || undefined,
     genres: (raw.genre_ids ?? raw.genres?.map(({ id }) => id) ?? []).map(
       String
+    ),
+    genreNames: Object.fromEntries(
+      (raw.genres ?? []).flatMap(({ id, name }) => (name ? [[id, name]] : []))
+    ),
+    keywordNames: Object.fromEntries(
+      (raw.keywords?.keywords ?? raw.keywords?.results ?? []).flatMap(
+        ({ id, name }) => (name ? [[id, name]] : [])
+      )
     ),
     keywords: (raw.keywords?.keywords ?? raw.keywords?.results ?? []).map(
       ({ id }) => String(id)

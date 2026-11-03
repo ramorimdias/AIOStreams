@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { resolveConfigCredentials } from '../../utils/basic-auth.js';
 import { createResponse } from '../../utils/responses.js';
 import { catalogApiRateLimiter } from '../../middlewares/ratelimit.js';
 import { attachSession, injectAccessKey } from '../../middlewares/auth.js';
@@ -13,6 +14,7 @@ import {
   UserRepository,
   mergeConfigs,
   requiresOnlyGenre,
+  recommendationCatalogPreviews,
 } from '@aiostreams/core';
 
 const router: Router = Router();
@@ -82,6 +84,20 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       );
       return;
     }
+    const credentials = await resolveConfigCredentials(req, res, {
+      allowEncrypted: false,
+    });
+    let personalized: Awaited<
+      ReturnType<typeof recommendationCatalogPreviews>
+    > = [];
+    if (credentials && validatedUserData.personalizedRecommendations?.enabled) {
+      await UserRepository.verifyUser(credentials.uuid, credentials.password);
+      res.setHeader('Cache-Control', 'no-store');
+      personalized = await recommendationCatalogPreviews({
+        ...validatedUserData,
+        uuid: credentials.uuid,
+      });
+    }
     validatedUserData.catalogModifications = undefined;
     validatedUserData.newCatalogsDisabled = undefined;
     validatedUserData.upstreamCatalogOrder = undefined;
@@ -105,7 +121,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
           ) !== -1
         : false,
     }));
-    res.status(200).json(createResponse({ success: true, data: catalogs }));
+    res
+      .status(200)
+      .json(
+        createResponse({ success: true, data: [...catalogs, ...personalized] })
+      );
   } catch (error) {
     if (error instanceof APIError) {
       next(error);

@@ -15,7 +15,7 @@ import { getAddonName } from '../utils/general.js';
 import type { Addon, Resource, UserData } from '../db/index.js';
 import {
   recommendationManifest,
-  recommendationSource,
+  isRecommendationCatalog,
 } from '../recommendations/catalogs.js';
 import type { AIOStreamsContext } from './types.js';
 
@@ -527,12 +527,14 @@ export async function buildResources(ctx: AIOStreamsContext): Promise<void> {
     ctx.supportedResources[instanceId] = addonResources;
   }
 
-  const recommendations = await recommendationManifest(ctx.userData, ctx.options?.catalogPreview);
+  const recommendations = ctx.options?.catalogPreview
+    ? undefined
+    : await recommendationManifest(ctx.userData);
   if (recommendations?.catalogs.length) {
-    ctx.manifests[recommendationSource] = recommendations;
+    ctx.manifests[recommendations.id] = recommendations;
     const catalogs = recommendations.catalogs.map((catalog) => ({
       ...catalog,
-      id: `${recommendationSource}.${catalog.id}`,
+      id: `${recommendations.id}.${catalog.id}`,
     }));
     ctx.finalCatalogs.push(...catalogs);
     const types = catalogs.map(
@@ -650,14 +652,17 @@ export async function buildResources(ctx: AIOStreamsContext): Promise<void> {
           (mod) => mod.id === catalog.id && mod.type === catalog.type
         );
         if (!modification)
-          return !newCatalogsDisabled.has(catalog.id.split('.')[0]);
+          return (
+            isRecommendationCatalog(catalog.id) ||
+            !newCatalogsDisabled.has(catalog.id.split('.')[0])
+          );
         return modification.enabled !== false;
       })
       .map((catalog) => {
         const modification = modifications.find(
           (mod) => mod.id === catalog.id && mod.type === catalog.type
         );
-        if (modification?.name) {
+        if (modification?.name && !isRecommendationCatalog(catalog.id)) {
           catalog.name = modification.name;
         }
 

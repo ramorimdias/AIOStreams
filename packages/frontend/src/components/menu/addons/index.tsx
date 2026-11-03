@@ -39,6 +39,7 @@ import {
   addonOf,
   catalogKey,
   disabledPresets,
+  isRecommendationCatalog,
   presetOf,
   withUpstreamOrder,
 } from './_components/catalog-order';
@@ -66,7 +67,7 @@ function addonSetKey(presets: UserData['presets'] | undefined): string {
 function Content() {
   const { status } = useStatus();
   const { mode } = useMode();
-  const { userData, setUserData } = useUserData();
+  const { uuid, password, userData, setUserData } = useUserData();
   const { isInherited, hasParent } = useParentInheritance();
   const [page, setPage] = useState<'installed' | 'marketplace'>('installed');
   const { tab: installedTab, setTab: setInstalledTab } = useSubTab('addons');
@@ -74,6 +75,17 @@ function Content() {
     () => new Set()
   );
   const [upstreamKeys, setUpstreamKeys] = useState<string[]>([]);
+  const [recommendationLabels, setRecommendationLabels] = useState<{
+    uuid?: string;
+    names: Record<string, string>;
+  }>();
+  const recommendationNames =
+    userData.personalizedRecommendations?.enabled &&
+    recommendationLabels?.uuid === (uuid ?? undefined)
+      ? recommendationLabels?.names
+      : undefined;
+  const currentUuid = useRef(uuid);
+  currentUuid.current = uuid;
   const [mergeRequest, setMergeRequest] = useState<MergeRequest | null>(null);
   const clearMergeRequest = useCallback(() => setMergeRequest(null), []);
   const addonsKey = useMemo(
@@ -85,13 +97,31 @@ function Content() {
   const fetchedFor = useRef<string | null>(null);
   const { mutate: fetchCatalogsData, isPending: catalogLoading } = useMutation({
     mutationFn: (currentUserData: typeof userData) =>
-      fetchCatalogs(currentUserData),
+      fetchCatalogs(
+        currentUserData,
+        uuid && currentUserData.personalizedRecommendations?.enabled
+          ? { uuid, password }
+          : undefined
+      ),
     onSuccess: (catalogs, currentUserData) => {
       // Catalogs of other addons would drop every saved modification.
-      if (addonSetKey(currentUserData.presets) !== currentAddons.current)
+      if (
+        currentUserData.uuid !== (currentUuid.current ?? undefined) ||
+        addonSetKey(currentUserData.presets) !== currentAddons.current
+      )
         return;
       const keys = catalogs.map(catalogKey);
       setUpstreamKeys(keys);
+      setRecommendationLabels({
+        uuid: currentUserData.uuid,
+        names: Object.fromEntries(
+          catalogs
+            .filter((item) => isRecommendationCatalog(item.id))
+            .flatMap((item) =>
+              item.name ? [[catalogKey(item), item.name]] : []
+            )
+        ),
+      });
       const saved = currentUserData.catalogModifications ?? [];
       // A first fetch has nothing to compare against.
       if (saved.length) {
@@ -141,9 +171,13 @@ function Content() {
               0,
               {
                 id: catalog.id,
-                name: catalog.name,
+                name: isRecommendationCatalog(catalog.id)
+                  ? undefined
+                  : catalog.name,
                 type: catalog.type,
-                enabled: !startOff.has(catalog.id.split('.')[0]),
+                enabled:
+                  isRecommendationCatalog(catalog.id) ||
+                  !startOff.has(catalog.id.split('.')[0]),
                 shuffle: false,
                 usePosterService: !!(
                   currentUserData.rpdbApiKey ||
@@ -168,6 +202,7 @@ function Content() {
           (mod) =>
             (mod.id.startsWith('aiostreams.merged.') &&
               mergedCatalogIds.has(mod.id)) ||
+            isRecommendationCatalog(mod.id) ||
             newCatalogIds.has(catalogKey(mod)) ||
             offPresets.has(presetOf(mod.id))
         );
@@ -194,23 +229,40 @@ function Content() {
 
   const refreshCatalogs = useCallback(
     (hideToast = false) => {
-      fetchCatalogsData(userData, {
-        onSuccess: hideToast
-          ? undefined
-          : () => toast.success('Catalogs fetched successfully'),
-      });
+      fetchCatalogsData(
+        { ...userData, uuid: uuid ?? undefined },
+        {
+          onSuccess: hideToast
+            ? undefined
+            : () => toast.success('Catalogs fetched successfully'),
+        }
+      );
     },
-    [fetchCatalogsData, userData]
+    [fetchCatalogsData, userData, uuid]
   );
 
   const catalogsShown = page === 'installed' && installedTab === 'catalogs';
   useEffect(() => {
-    if (!catalogsShown || !userData.presets?.length) return;
-    if (fetchedFor.current === addonsKey) return;
+    if (
+      !catalogsShown ||
+      (!userData.presets?.length &&
+        !userData.personalizedRecommendations?.enabled)
+    )
+      return;
+    if (
+      !userData.personalizedRecommendations?.enabled &&
+      fetchedFor.current === addonsKey
+    )
+      return;
     fetchedFor.current = addonsKey;
-    fetchCatalogsData(userData);
+    fetchCatalogsData({ ...userData, uuid: uuid ?? undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalogsShown, addonsKey]);
+  }, [
+    catalogsShown,
+    addonsKey,
+    uuid,
+    userData.personalizedRecommendations?.enabled,
+  ]);
 
   const [search, setSearch] = useState('');
   // Filter states
@@ -478,6 +530,7 @@ function Content() {
                         ) : (
                           <>
                             <MergedCatalogsCard
+                              recommendationNames={recommendationNames}
                               request={mergeRequest}
                               onRequestHandled={clearMergeRequest}
                             />
@@ -486,6 +539,7 @@ function Content() {
                               fetchCatalogsData={refreshCatalogs}
                               newCatalogs={newCatalogs}
                               upstreamKeys={upstreamKeys}
+                              recommendationNames={recommendationNames}
                               onMerge={setMergeRequest}
                             />
                           </>

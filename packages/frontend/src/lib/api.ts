@@ -566,8 +566,9 @@ export async function resolveStreamExpressions(
 /**
  * Get catalogs for user data
  */
-export async function fetchCatalogs(userData: UserData) {
+export async function fetchCatalogs(userData: UserData, credentials?: Credentials) {
   return api<CatalogInfo[]>('POST /catalogs', {
+    ...(credentials ? authed(credentials) : {}),
     body: { userData },
   });
 }

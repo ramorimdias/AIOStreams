@@ -51,6 +51,7 @@ import {
   addonOf,
   catalogKey,
   disabledPresets,
+  isRecommendationCatalog,
   presetOf,
   withUpstreamOrder,
 } from './catalog-order';
@@ -88,6 +89,7 @@ export function CatalogSettingsCard({
   fetchCatalogsData,
   newCatalogs,
   upstreamKeys,
+  recommendationNames,
   onMerge,
 }: {
   onMerge: (request: MergeRequest) => void;
@@ -97,6 +99,7 @@ export function CatalogSettingsCard({
   newCatalogs: ReadonlySet<string>;
   /** Every catalog in the order the addons list them. */
   upstreamKeys: string[];
+  recommendationNames?: Record<string, string>;
 }) {
   const { userData, setUserData } = useUserData();
 
@@ -125,12 +128,25 @@ export function CatalogSettingsCard({
   );
   const catalogs = useMemo(
     () =>
-      (userData.catalogModifications ?? []).filter(
-        (catalog) =>
-          !sourceCatalogsInMergedCatalogs.has(catalogKey(catalog)) &&
-          !offPresets.has(presetOf(catalog.id))
-      ),
-    [userData.catalogModifications, sourceCatalogsInMergedCatalogs, offPresets]
+      (userData.catalogModifications ?? [])
+        .filter(
+          (catalog) =>
+            !sourceCatalogsInMergedCatalogs.has(catalogKey(catalog)) &&
+            !offPresets.has(presetOf(catalog.id)) &&
+            (!isRecommendationCatalog(catalog.id) ||
+              (catalog.enabled !== false &&
+                recommendationNames?.[catalogKey(catalog)]))
+        )
+        .map((catalog) => {
+          const name = recommendationNames?.[catalogKey(catalog)];
+          return name ? { ...catalog, name } : catalog;
+        }),
+    [
+      userData.catalogModifications,
+      sourceCatalogsInMergedCatalogs,
+      offPresets,
+      recommendationNames,
+    ]
   );
 
   const [search, setSearch] = useState('');
@@ -331,7 +347,9 @@ export function CatalogSettingsCard({
     setUserData((prev) => ({
       ...prev,
       catalogModifications: prev.catalogModifications?.map((c) =>
-        selected.has(catalogKey(c)) ? { ...c, enabled } : c
+        selected.has(catalogKey(c)) && !isRecommendationCatalog(c.id)
+          ? { ...c, enabled }
+          : c
       ),
       mergedCatalogs: prev.mergedCatalogs?.map((mc) =>
         selected.has(catalogKey(mc)) ? { ...mc, enabled } : mc

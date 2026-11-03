@@ -16,9 +16,9 @@ Set `SIMKL_CLIENT_ID` in the AIOStreams server's `.env` or deployment environmen
 1. Sign in to a saved AIOStreams configuration. Open **Miscellaneous → Recommendations** and enable **Personalized Recommendations**.
 2. Choose the base configuration or a variant under **Simkl account scope**. Select **Connect Simkl**, open the approval link, and authorize access using the viewer’s Simkl account.
 3. Return to AIOStreams and select **Check authorization**. The connection is saved immediately. Save the AIOStreams configuration to apply recommendation preferences.
-4. Use the instance’s TMDB credential or configure your own under **Services → Metadata → TMDB**. Refresh the list under **Addons → Catalogs** to reorder or hide rows.
+4. Use the instance’s TMDB credential or configure your own under **Services → Metadata → TMDB**. Use **Recommendation Catalogs** to turn individual movie and series rows on or off for the selected scope. Save, then refresh **Addons → Catalogs** to reorder the active rows, grouped under **Recommendations (scope)**.
 
-The first catalog load can take longer while AIOStreams fetches history and title metadata. Afterward, the refresh interval controls how often catalog requests check for Simkl changes. The default is six hours. The previous rows remain available during a refresh or a temporary provider outage. A row can be empty if there are no suitable matches.
+The first catalog load can take longer while AIOStreams fetches history and title metadata. Generic titles are shown until the first results are ready. The next catalog-list refresh can then show names such as **Because you watched Friends**, along with rows for individual favorite genres and themes. Afterward, the refresh interval controls how often catalog requests check for Simkl changes. The default is six hours. The previous rows remain available during a refresh or a temporary provider outage. A row can be empty if there are no suitable matches.
 
 ## Configuration variants
 

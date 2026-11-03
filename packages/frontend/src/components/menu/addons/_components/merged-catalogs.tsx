@@ -23,6 +23,7 @@ import { LuMerge } from 'react-icons/lu';
 import { BiEdit, BiTrash } from 'react-icons/bi';
 import { FaPlus } from 'react-icons/fa';
 import { toast } from 'sonner';
+import { catalogKey, isRecommendationCatalog } from './catalog-order';
 
 /** Opens the editor from elsewhere. */
 export type MergeRequest =
@@ -35,8 +36,10 @@ export const encodeMergeSource = (c: { id: string; type: string }) =>
 export function MergedCatalogsCard({
   request,
   onRequestHandled,
+  recommendationNames,
 }: {
   request?: MergeRequest | null;
+  recommendationNames?: Record<string, string>;
   /** Clears the request, so a remount doesn't open the editor again. */
   onRequestHandled?: () => void;
 }) {
@@ -92,9 +95,14 @@ export function MergedCatalogsCard({
 
   const allCatalogs = (userData.catalogModifications || [])
     .filter((c) => !c.id.startsWith('aiostreams.merged.')) // Exclude merged catalogs from being selected as sources
+    .filter(
+      (c) =>
+        !isRecommendationCatalog(c.id) ||
+        (c.enabled !== false && recommendationNames?.[catalogKey(c)])
+    )
     .map((c) => ({
       value: encodeMergeSource(c),
-      name: c.name || c.id,
+      name: recommendationNames?.[catalogKey(c)] || c.name || c.id,
       catalogType: c.type,
       addonName: c.addonName || 'Unknown Addon',
       isDisabled: c.enabled === false,

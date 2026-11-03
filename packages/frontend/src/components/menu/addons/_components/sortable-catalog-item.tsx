@@ -29,7 +29,7 @@ import { MdSavedSearch } from 'react-icons/md';
 import { FaArrowLeftLong, FaArrowRightLong, FaShuffle } from 'react-icons/fa6';
 import { PiStarFill, PiStarBold } from 'react-icons/pi';
 import { toast } from 'sonner';
-import { catalogKey } from './catalog-order';
+import { catalogKey, isRecommendationCatalog } from './catalog-order';
 
 export type CatalogUpdate = (
   catalog: CatalogModification
@@ -196,12 +196,14 @@ const CatalogRow = memo(function CatalogRow({
             iconClass={iconClass}
           />
         </div>
-        <Switch
-          value={enabled}
-          onValueChange={(value) =>
-            onToggleEnabled(catalog.id, catalog.type, value)
-          }
-        />
+        {!isRecommendationCatalog(catalog.id) && (
+          <Switch
+            value={enabled}
+            onValueChange={(value) =>
+              onToggleEnabled(catalog.id, catalog.type, value)
+            }
+          />
+        )}
         <IconButton
           rounded
           size="sm"
@@ -368,7 +370,7 @@ function CatalogSettingsModal({
             Edit name and sources
           </Button>
         )}
-        {!merged && (
+        {!merged && !isRecommendationCatalog(catalog.id) && (
           <form
             className="space-y-3"
             onSubmit={(e) => {
