@@ -52,7 +52,7 @@ export function PersonalizedRecommendations() {
           onValueChange={(enabled) => update({ enabled })}
         />
         <Select
-          label="Simkl account and catalog scope"
+          label="Scope for Simkl and catalog switches"
           value={variant || '__base'}
           onValueChange={(value) => setVariant(value === '__base' ? '' : value)}
           options={[
@@ -134,8 +134,8 @@ export function PersonalizedRecommendations() {
             </div>
           </SettingsCard>
           <SettingsCard
-            title="Discovery Preferences"
-            description="Adjust the types of recommendations AIOStreams generates."
+            title="Discovery Preferences (Base Configuration)"
+            description="These defaults apply to every variant unless its variant script overrides them."
           >
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Select
@@ -168,8 +168,8 @@ export function PersonalizedRecommendations() {
             </div>
           </SettingsCard>
           <SettingsCard
-            title="Exclusions"
-            description="Filter genres and keywords out of your recommendations."
+            title="Exclusions (Base Configuration)"
+            description="These exclusions apply to every variant unless its variant script overrides them. Excluding Animation also filters out Anime Top Picks for that media type."
           >
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <GenreExclusions
