@@ -8,19 +8,29 @@ import { parseRetryAfter } from '../utils/http.js';
 import type { HistoryItem, MediaType, Title } from './ranking.js';
 
 export interface HistoryProvider {
-  history(type: MediaType): Promise<HistoryItem[]>;
+  history(type: MediaType | 'anime'): Promise<HistoryItem[]>;
 }
 
 const mediaIds = z.object({
-  ids: z.object({ simkl: z.number(), imdb: z.string().nullish() }),
+  ids: z.object({
+    simkl: z.number(),
+    imdb: z.string().nullish(),
+    tmdb: z
+      .union([z.number(), z.string().regex(/^\d+$/)])
+      .nullish()
+      .transform((value) => (value ? Number(value) : undefined))
+      .catch(undefined),
+  }),
 });
 const itemIds = z.object({
   movie: mediaIds.optional(),
   show: mediaIds.optional(),
+  anime: mediaIds.optional(),
 });
 const historyResponse = z.array(
   itemIds.extend({
     status: z.string().optional(),
+    anime_type: z.string().nullish(),
     last_watched_at: z.string().nullish(),
     user_rating: z.number().nullish(),
     total_plays_count: z.number().nullish(),
@@ -40,6 +50,7 @@ const activitySchema = z.object({
   all: z.string().nullish(),
   movies: activityBlock,
   tv_shows: activityBlock,
+  anime: activityBlock,
 });
 type Activity = z.infer<typeof activitySchema>;
 const historyCache = Cache.getInstance<
@@ -101,7 +112,7 @@ export class SimklHistory implements HistoryProvider {
       .parse((await response.json()) ?? {});
   }
 
-  async history(type: MediaType): Promise<HistoryItem[]> {
+  async history(type: MediaType | 'anime'): Promise<HistoryItem[]> {
     const accountKey = createHash('sha256')
       .update(JSON.stringify([this.clientId, this.accessToken]))
       .digest('hex');
@@ -139,11 +150,15 @@ export class SimklHistory implements HistoryProvider {
   }
 
   private async syncHistory(
-    type: MediaType,
+    type: MediaType | 'anime',
     cacheKey: string
   ): Promise<HistoryItem[]> {
-    const key = type === 'movie' ? 'movies' : 'shows';
-    const block = type === 'movie' ? 'movies' : 'tv_shows';
+    const key =
+      type === 'anime' ? 'anime' : type === 'movie' ? 'movies' : 'shows';
+    const block =
+      type === 'series' ? 'tv_shows' : type === 'anime' ? 'anime' : 'movies';
+    const extended: Record<string, string> =
+      type === 'anime' ? { extended: 'full' } : {};
     const previous = await historyCache.get(cacheKey, true);
     const activity = activitySchema.parse(await this.get('/sync/activities'));
     if (previous && previous.activity.all === activity.all) {
@@ -156,12 +171,12 @@ export class SimklHistory implements HistoryProvider {
       previous?.activity[block]?.[field] !== activity[block]?.[field];
     const merge = (body: Record<string, unknown>) => {
       for (const entry of historyResponse.parse(body[key] ?? [])) {
-        const ids = (entry.movie ?? entry.show)?.ids;
+        const ids = (entry.movie ?? entry.show ?? entry.anime)?.ids;
         if (!ids) continue;
         const watchedAt = Date.parse(entry.last_watched_at ?? '');
+        const imdb = ids.imdb && /^tt\d+$/.test(ids.imdb) ? ids.imdb : '';
         if (
-          !ids.imdb ||
-          !/^tt\d+$/.test(ids.imdb) ||
+          (!imdb && !(type === 'anime' && ids.tmdb)) ||
           (!Number.isFinite(watchedAt) &&
             entry.status !== 'completed' &&
             !entry.user_rating)
@@ -170,7 +185,15 @@ export class SimklHistory implements HistoryProvider {
           continue;
         }
         entries.set(ids.simkl, {
-          imdb: ids.imdb,
+          imdb,
+          ...(type === 'anime'
+            ? {
+                tmdb: ids.tmdb,
+                animeType:
+                  entry.anime_type ??
+                  (entry.movie ? 'movie' : entry.show ? 'tv' : undefined),
+              }
+            : {}),
           rating: entry.user_rating ?? undefined,
           watchedAt: Number.isFinite(watchedAt) ? watchedAt : undefined,
           plays:
@@ -181,9 +204,9 @@ export class SimklHistory implements HistoryProvider {
 
     if (!since) {
       entries.clear();
-      merge(await this.get('/sync/all-items/' + key));
+      merge(await this.get('/sync/all-items/' + key, extended));
     } else {
-      const query = { date_from: since };
+      const query = { ...extended, date_from: since };
       if (
         [
           'watching',
@@ -197,7 +220,7 @@ export class SimklHistory implements HistoryProvider {
         merge(await this.get('/sync/all-items/' + key, query));
       }
       if (changed('rated_at'))
-        merge(await this.get('/sync/ratings/' + key, query));
+        merge(await this.get('/sync/ratings/' + key, { date_from: since }));
       if (changed('removed_from_list')) {
         const body = await this.get('/sync/all-items/' + key, {
           extended: 'simkl_ids_only',
@@ -206,7 +229,9 @@ export class SimklHistory implements HistoryProvider {
           z
             .array(itemIds)
             .parse(body[key] ?? [])
-            .map((entry) => (entry.movie ?? entry.show)?.ids.simkl)
+            .map(
+              (entry) => (entry.movie ?? entry.show ?? entry.anime)?.ids.simkl
+            )
         );
         for (const id of entries.keys()) {
           if (!current.has(id)) entries.delete(id);

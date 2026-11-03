@@ -38,6 +38,7 @@ type Settings = NonNullable<UserData['personalizedRecommendations']>;
 type Snapshot = {
   checkedAt: number;
   generatedAt: number;
+  rotation?: number;
   fingerprint: string;
   rows: Record<Row, MetaPreview[]>;
   names?: Partial<Record<Row, string>>;
@@ -54,6 +55,8 @@ const retryAfter = Cache.getInstance<string, boolean>(
   'memory'
 );
 const limit = 24;
+const regularRows = rowIds.filter((id) => id !== 'anime-top');
+const animeRows: Row[] = ['anime-top'];
 const namedRows: ReadonlySet<Row> = new Set([...genreRows, ...themeRows]);
 
 export function simklVariant(user: UserData) {
@@ -72,7 +75,7 @@ function catalogEnabled(
   return (
     user.catalogModifications?.find(
       (item) => item.id === source + '.' + row && item.type === type
-    )?.enabled !== false
+    )?.enabled ?? row !== 'anime-top'
   );
 }
 
@@ -86,45 +89,47 @@ export async function recommendationManifest(
   if (!grant) return;
   const source = recommendationSourceId(variant);
   const catalogs = await Promise.all(
-    types.map(async (type) => {
-      const key = recommendationKey(user, type, grant);
-      let cached = await snapshots.get(key);
-      const enabled = rowIds.filter((id) =>
-        catalogEnabled(user, source, type, id)
-      );
-      if (preview && enabled.length) {
-        const warmup = getRecommendationCatalog(user, type, enabled[0]).catch(
-          () => undefined
+    types.flatMap((type) =>
+      [false, true].map(async (anime) => {
+        const key = recommendationKey(user, type, grant, anime);
+        let cached = await snapshots.get(key);
+        const enabled = (anime ? animeRows : regularRows).filter((id) =>
+          catalogEnabled(user, source, type, id)
         );
-        if (!cached) {
-          await Promise.race([
-            warmup,
-            setTimeout(1500, undefined, { ref: false }),
-          ]);
-          cached = await snapshots.get(key);
+        if (preview && enabled.length) {
+          const warmup = getRecommendationCatalog(user, type, enabled[0]).catch(
+            () => undefined
+          );
+          if (!cached) {
+            await Promise.race([
+              warmup,
+              setTimeout(1500, undefined, { ref: false }),
+            ]);
+            cached = await snapshots.get(key);
+          }
         }
-      }
-      const available = enabled.filter((id) => {
-        if (preview && !cached?.rows[id]?.length) return false;
-        return (
-          !namedRows.has(id) ||
-          !cached ||
-          (cached.names?.[id] && cached.rows[id]?.length)
-        );
-      });
-      // A viewer who enables only genre or theme rows still needs a refresh
-      // after the current snapshot has no matches and advertises no catalogs.
-      if (!preview && enabled.length && !available.length) {
-        void getRecommendationCatalog(user, type, enabled[0]).catch(
-          () => undefined
-        );
-      }
-      return available.map((id) => ({
-        id,
-        type,
-        name: cached?.names?.[id] ?? rows[id],
-      }));
-    })
+        const available = enabled.filter((id) => {
+          if ((preview || anime) && !cached?.rows[id]?.length) return false;
+          return (
+            !namedRows.has(id) ||
+            !cached ||
+            (cached.names?.[id] && cached.rows[id]?.length)
+          );
+        });
+        // A viewer who enables only genre or theme rows still needs a refresh
+        // after the current snapshot has no matches and advertises no catalogs.
+        if (!preview && enabled.length && !available.length) {
+          void getRecommendationCatalog(user, type, enabled[0]).catch(
+            () => undefined
+          );
+        }
+        return available.map((id) => ({
+          id,
+          type,
+          name: cached?.names?.[id] ?? rows[id],
+        }));
+      })
+    )
   );
   return {
     id: source,
@@ -179,7 +184,8 @@ export async function recommendationCatalogPreviews(user: UserData) {
 export function recommendationKey(
   user: UserData,
   type: MediaType,
-  grantId: string
+  grantId: string,
+  anime = false
 ): string {
   return createHash('sha256')
     .update(
@@ -190,6 +196,7 @@ export function recommendationKey(
         grantId,
         user.tmdbApiKey,
         user.tmdbAccessToken,
+        ...(anime ? ['anime'] : []),
       ])
     )
     .digest('hex');
@@ -256,6 +263,7 @@ async function refresh(
   user: UserData,
   type: MediaType,
   grantId: string,
+  anime: boolean,
   cached?: Snapshot
 ): Promise<Snapshot> {
   const settings = user.personalizedRecommendations!;
@@ -272,7 +280,7 @@ async function refresh(
     accessToken,
     userScopeKey(user),
     grantId
-  ).history(type);
+  ).history(anime ? 'anime' : type);
   history.sort(
     (a, b) =>
       (b.watchedAt ?? 0) - (a.watchedAt ?? 0) || a.imdb.localeCompare(b.imdb)
@@ -286,7 +294,10 @@ async function refresh(
   ) {
     return { ...cached, checkedAt: now };
   }
+  const rotation =
+    cached?.fingerprint === fingerprint ? (cached.rotation ?? 0) + 1 : 0;
   const empty: Snapshot['rows'] = {
+    'anime-top': [],
     top: [],
     watched: [],
     loved: [],
@@ -315,9 +326,17 @@ async function refresh(
   ].slice(0, 200);
   const enriched = (
     await mapBatches(sample, async (item) => {
-      const id = await tmdb.find(item.imdb, type);
-      const title = id ? await tmdb.details(id, type) : undefined;
-      return title ? { history: item, title } : undefined;
+      const media =
+        anime && item.animeType
+          ? item.animeType === 'movie'
+            ? 'movie'
+            : 'series'
+          : type;
+      const id =
+        (anime && item.animeType ? item.tmdb : undefined) ??
+        (item.imdb ? await tmdb.find(item.imdb, media) : undefined);
+      const title = id ? await tmdb.details(id, media) : undefined;
+      return title ? { history: item, title, media } : undefined;
     })
   ).filter((item) => item !== undefined);
   if (!enriched.length)
@@ -330,22 +349,47 @@ async function refresh(
   const favorites = enriched
     .filter(({ history: item }) => positive.includes(item))
     .sort((a, b) => (b.history.rating ?? 0) - (a.history.rating ?? 0));
-  const loved = enriched.find(
-    ({ history: item }) => (item.rating ?? 0) >= 9 || item.plays >= 2
-  )?.title;
-  const watchedSeeds = enriched.filter(
-    ({ history: item }) => item.watchedAt !== undefined
-  );
+  const lovedSeeds = enriched
+    .filter(({ history: item }) => (item.rating ?? 0) >= 9 || item.plays >= 2)
+    .slice(0, 3);
+  const loved = lovedSeeds[rotation % lovedSeeds.length]?.title;
+  const watchedSeeds = enriched
+    .filter(
+      ({ history: item, title }) =>
+        item.watchedAt !== undefined && title.id !== loved?.id
+    )
+    .slice(0, 3);
   const recent = (
-    watchedSeeds.find(({ title }) => title.id !== loved?.id) ?? watchedSeeds[0]
+    watchedSeeds[rotation % watchedSeeds.length] ??
+    enriched.find(({ history: item }) => item.watchedAt !== undefined)
   )?.title;
-  const seeds = [
-    ...new Set([
-      recent,
-      loved,
-      ...favorites.slice(0, 8).map(({ title }) => title),
-    ]),
-  ].filter((item) => item !== undefined);
+  const seeds = anime
+    ? enriched
+        .filter(({ media }) => media === type)
+        .slice(0, 8)
+        .map(({ title }) => title)
+    : [
+        ...new Set([
+          recent,
+          loved,
+          ...favorites.slice(0, 8).map(({ title }) => title),
+        ]),
+      ].filter((item) => item !== undefined);
+  const watchedAnimeIds = anime
+    ? new Set([
+        ...history
+          .filter(
+            (item) =>
+              item.tmdb &&
+              item.animeType &&
+              (item.animeType === 'movie') === (type === 'movie')
+          )
+          .map((item) => item.tmdb),
+        ...enriched
+          .filter(({ media }) => media === type)
+          .map(({ title }) => title.id),
+      ])
+    : undefined;
   const threshold = discovery[settings.style ?? 'balanced'];
   const params: Record<string, string> = {
     'vote_average.gte': String(threshold.rating),
@@ -432,6 +476,19 @@ async function refresh(
       filter: { with_people: id },
     })),
   ];
+  if (anime) {
+    params.with_genres = '16';
+    params.with_original_language = 'ja';
+    discoverRows.splice(
+      0,
+      discoverRows.length,
+      { row: 'anime-top', filter: {} },
+      ...themes.map((id) => ({
+        row: 'anime-top' as const,
+        filter: { with_keywords: id },
+      }))
+    );
+  }
   const discovered = await mapBatches(
     discoverRows,
     async ({ row, filter }) => ({
@@ -452,6 +509,12 @@ async function refresh(
   });
   const source = new Map(seeded.map(({ id, titles }) => [id, titles]));
   const candidates: Record<Row, Title[]> = {
+    'anime-top': anime
+      ? [
+          ...discovered.flatMap(({ titles }) => titles),
+          ...seeded.flatMap(({ titles }) => titles),
+        ]
+      : [],
     top: [
       ...discovered.flatMap(({ titles }) => titles),
       ...seeded.flatMap(({ titles }) => titles),
@@ -473,7 +536,7 @@ async function refresh(
   };
   const ids = [
     ...new Set(
-      rowIds.flatMap((row) => {
+      (anime ? animeRows : regularRows).flatMap((row) => {
         const viable = candidates[row].filter(
           (item) =>
             item.votes >= threshold.min && item.rating >= threshold.rating
@@ -494,11 +557,18 @@ async function refresh(
     )
   );
 
-  for (const row of rowIds) {
+  for (const row of anime ? animeRows : regularRows) {
     const pool = [...new Set(candidates[row].map(({ id }) => id))].flatMap(
       (id) => {
         const item = details.get(id);
-        return item && eligible(item, watched, settings, type) ? [item] : [];
+        return item &&
+          (!anime ||
+            (!watchedAnimeIds?.has(id) &&
+              item.genres.includes('16') &&
+              (item.language === 'ja' || item.countries.includes('JP')))) &&
+          eligible(item, watched, settings, type)
+          ? [item]
+          : [];
       }
     );
     const ranked = rank(pool, profile, type).map(({ title }) => title);
@@ -513,7 +583,14 @@ async function refresh(
       releaseInfo: item.year,
     }));
   }
-  return { checkedAt: now, generatedAt: now, fingerprint, rows: empty, names };
+  return {
+    checkedAt: now,
+    generatedAt: now,
+    fingerprint,
+    rotation,
+    rows: empty,
+    names,
+  };
 }
 
 export async function getRecommendationCatalog(
@@ -538,7 +615,8 @@ export async function getRecommendationCatalog(
   if (!grantId) return [];
   const media = type as MediaType;
   const row = id as Row;
-  const key = recommendationKey(user, media, grantId);
+  const anime = row === 'anime-top';
+  const key = recommendationKey(user, media, grantId, anime);
   const cached = await snapshots.get(key);
   const interval =
     (user.personalizedRecommendations?.refreshHours ?? 6) * 3600000;
@@ -548,7 +626,7 @@ export async function getRecommendationCatalog(
 
   let task = pending.get(key);
   if (!task) {
-    task = refresh(user, media, grantId, cached)
+    task = refresh(user, media, grantId, anime, cached)
       .then(async (snapshot) => {
         await snapshots.set(key, snapshot, interval / 1000 + 7 * 86400);
         return snapshot;

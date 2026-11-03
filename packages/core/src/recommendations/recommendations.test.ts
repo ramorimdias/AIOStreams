@@ -556,3 +556,149 @@ test('keyword lookup resolves saved IDs and reuses search matches', async (t) =>
   );
   assert.equal(upstream.mock.callCount(), 2);
 });
+
+test('watched and loved names advance on a daily rebuild with unchanged history', async (t) => {
+  const base = fixture.titles[0];
+  const titles = Array.from({ length: 4 }, (_, i) => ({
+    ...base,
+    id: 400 + i,
+    imdb: 'tt400' + i,
+    name: 'Seed ' + i,
+  }));
+  const history = titles.map(({ imdb }, index) => ({
+    imdb,
+    watchedAt: fixture.now - index * 1000,
+    rating: index < 2 ? 9 : 7,
+    plays: 1,
+  }));
+  const target = fixture.candidates[0];
+  const scoped = { ...user, uuid: 'seed-rotation' };
+  t.mock.method(SimklHistory.prototype, 'history', async () => [...history]);
+  t.mock.method(
+    RecommendationTmdb.prototype,
+    'find',
+    async (imdb: string) => titles.find((title) => title.imdb === imdb)?.id
+  );
+  t.mock.method(
+    RecommendationTmdb.prototype,
+    'details',
+    async (id: number) => titles.find((title) => title.id === id) ?? target
+  );
+  t.mock.method(RecommendationTmdb.prototype, 'candidates', async () => [
+    target,
+  ]);
+  let now = fixture.now;
+  t.mock.method(Date, 'now', () => now);
+  const names = async () =>
+    (await recommendationManifest(scoped))?.catalogs
+      .filter(
+        ({ id, type }) =>
+          type === 'movie' && (id === 'watched' || id === 'loved')
+      )
+      .map(({ name }) => name);
+  await getRecommendationCatalog(scoped, 'movie', 'watched');
+  assert.deepEqual(await names(), [
+    'Because you watched Seed 1',
+    'Because you loved Seed 0',
+  ]);
+  now += 6 * 3600000 + 1;
+  await getRecommendationCatalog(scoped, 'movie', 'watched');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(await names(), [
+    'Because you watched Seed 1',
+    'Because you loved Seed 0',
+  ]);
+  now = fixture.now + 25 * 3600000;
+  await getRecommendationCatalog(scoped, 'movie', 'watched');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(await names(), [
+    'Because you watched Seed 2',
+    'Because you loved Seed 1',
+  ]);
+});
+
+test('anime Top Picks are opt-in per media type and share Simkl anime taste', async (t) => {
+  const scope = { ...user, uuid: 'anime-pools' };
+  assert.deepEqual(
+    await getRecommendationCatalog(scope, 'movie', 'anime-top'),
+    []
+  );
+  assert.ok(
+    !(await recommendationManifest(scope))?.catalogs.some(
+      ({ id }) => id === 'anime-top'
+    )
+  );
+  const scoped = {
+    ...scope,
+    catalogModifications: ['movie', 'series'].map((type) => ({
+      id: recommendationSource + '.anime-top',
+      type,
+      enabled: true,
+    })),
+  };
+  let libraryCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url: URL) => {
+    if (url.pathname === '/sync/activities') {
+      return Response.json({ all: 'initial', anime: { completed: 'initial' } });
+    }
+    assert.equal(url.pathname, '/sync/all-items/anime');
+    libraryCalls++;
+    return Response.json({
+      anime: [
+        {
+          show: { ids: { simkl: 99, tmdb: '99' } },
+          anime_type: 'tv',
+          status: 'completed',
+          user_rating: 9,
+        },
+      ],
+    });
+  });
+  const seed = {
+    ...fixture.titles[0],
+    id: 99,
+    imdb: 'tt99',
+    genres: ['16'],
+    language: 'ja',
+    countries: ['JP'],
+  };
+  const pick = { ...seed, id: 100, imdb: 'tt100' };
+  const cartoon = {
+    ...pick,
+    id: 101,
+    imdb: 'tt101',
+    language: 'en',
+    countries: ['US'],
+  };
+  t.mock.method(RecommendationTmdb.prototype, 'details', async (id: number) =>
+    [seed, pick, cartoon].find((item) => item.id === id)
+  );
+  t.mock.method(
+    RecommendationTmdb.prototype,
+    'candidates',
+    async (type: string, params: Record<string, string>, id?: number) => {
+      if (!id) {
+        assert.equal(params.with_genres, '16');
+        assert.equal(params.with_original_language, 'ja');
+      }
+      return type === 'movie' ? [pick, cartoon] : [seed, pick, cartoon];
+    }
+  );
+  const movies = await getRecommendationCatalog(scoped, 'movie', 'anime-top');
+  const series = await getRecommendationCatalog(scoped, 'series', 'anime-top');
+  assert.deepEqual(
+    movies.map(({ id, type }) => [id, type]),
+    [['tt100', 'movie']]
+  );
+  assert.deepEqual(
+    series.map(({ id, type }) => [id, type]),
+    [['tt100', 'series']]
+  );
+  assert.equal(libraryCalls, 1);
+  assert.equal(
+    (await recommendationManifest(scoped))?.catalogs.filter(
+      ({ id }) => id === 'anime-top'
+    ).length,
+    2
+  );
+});

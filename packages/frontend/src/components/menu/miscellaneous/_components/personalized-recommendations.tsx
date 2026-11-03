@@ -99,7 +99,7 @@ export function PersonalizedRecommendations() {
                       const enabled =
                         userData.catalogModifications?.find(
                           (item) => item.id === id && item.type === type
-                        )?.enabled !== false;
+                        )?.enabled ?? row !== 'anime-top';
                       return (
                         <Switch
                           key={row}

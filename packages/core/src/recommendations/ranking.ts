@@ -11,6 +11,8 @@ export type Feature =
   | 'languages';
 export type HistoryItem = {
   imdb: string;
+  tmdb?: number;
+  animeType?: string;
   rating?: number;
   watchedAt?: number;
   plays: number;

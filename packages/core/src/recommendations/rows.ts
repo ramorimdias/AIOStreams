@@ -1,6 +1,7 @@
 export const recommendationSource = 'aiostreams-recommendations';
 export const recommendationRows = {
   top: 'Top Picks for You',
+  'anime-top': 'Top Picks for You (Anime)',
   watched: 'Because You Watched',
   loved: 'Because You Loved',
   genres: 'Favorite Genre 1',
