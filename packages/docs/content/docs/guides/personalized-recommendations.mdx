@@ -1,0 +1,25 @@
+---
+title: Personalized Recommendations
+description: Build movie and series catalogs from your Simkl watch history.
+---
+
+Personalized Recommendations uses your Simkl watch history, ratings, and movie rewatches to generate movie and series catalogs in AIOStreams. The catalogs work with the existing Home and Discover views. A metadata addon that supports IMDb IDs supplies the full title and episode pages.
+
+## Setup
+
+1. Open **Miscellaneous → Recommendations** in your AIOStreams configuration and enable **Personalized Recommendations**.
+2. Enter your Simkl application client ID and the OAuth access token for the Simkl account whose history you want to use. Use a token issued to that client ID. See [Simkl authentication](https://api.simkl.org/authentication) for token setup.
+3. Use the instance's TMDB credential or enter your own under **Services → Metadata → TMDB**.
+4. Save your configuration. Refresh the catalog list under **Addons → Catalogs** to reorder rows, hide them, or show them only in Discover.
+
+The first catalog load can take longer while AIOStreams fetches history and title metadata. Afterward, the refresh interval controls how often catalog requests check for Simkl changes. The default is six hours. The previous rows remain available during a refresh or a temporary provider outage. A row can be empty if there are no suitable matches.
+
+## Configuration variants
+
+In **Simkl account scope**, select the variant and enter the credentials for that viewer. If a request selects multiple variants explicitly, the last explicitly selected variant supplies the account. If only automatic variants apply, the last automatic variant supplies the account. A variant without its own credentials has no personalized rows. For variant-specific discovery settings, set or merge the `personalizedRecommendations` configuration field in the variant script. Keep credentials in the account form.
+
+## Privacy
+
+AIOStreams sends the Simkl token to Simkl and uses watched title IDs to look up public metadata from TMDB. Credentials are stored with the encrypted AIOStreams configuration and removed from shareable templates and filtered exports. History and recommendation results are cached in server memory for the effective configuration. Anyone who has access to that configuration's personalized catalogs can see its recommendations, so treat install URLs and login credentials as private.
+
+Personalization covers Simkl's movie and TV show lists. The separately classified anime list is outside the current integration.

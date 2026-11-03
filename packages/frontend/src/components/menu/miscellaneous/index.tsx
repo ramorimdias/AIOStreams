@@ -11,6 +11,7 @@ import { DisplayDebug } from './_components/display-debug';
 import { ParentConfig } from './_components/parent-config';
 import { Variants } from './_components/variants';
 import { HealthChecks } from './_components/health-checks';
+import { PersonalizedRecommendations } from './_components/personalized-recommendations';
 
 export function MiscellaneousMenu() {
   return (
@@ -109,6 +110,12 @@ function Content() {
                   </p>
                 </div>
               ),
+          },
+          {
+            value: 'recommendations',
+            label: 'Recommendations',
+            icon: <FaEye className="w-4 h-4" />,
+            content: <PersonalizedRecommendations />,
           },
           {
             value: 'health-checks',
