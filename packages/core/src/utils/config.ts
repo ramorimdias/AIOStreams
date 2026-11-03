@@ -1544,7 +1544,7 @@ const BRANDING_FIELDS: (keyof UserData)[] = [
 // so a parent's would target fields the child lacks.
 // prettier-ignore
 const PERSONAL_FIELDS: (keyof UserData)[] = [
-  'appliedTemplates', 'variants', 'healthChecks',
+  'appliedTemplates', 'variants', 'healthChecks', 'simklClientId', 'simklAccessToken', 'simklVariantAccounts', 'personalizedRecommendations',
 ];
 
 /**

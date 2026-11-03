@@ -13,6 +13,10 @@ import { FeatureControl } from '../utils/feature.js';
 import { createProxy } from '../proxy/index.js';
 import { getAddonName } from '../utils/general.js';
 import type { Addon, Resource, UserData } from '../db/index.js';
+import {
+  recommendationManifest,
+  recommendationSource,
+} from '../recommendations/catalogs.js';
 import type { AIOStreamsContext } from './types.js';
 
 const logger = createLogger('core');
@@ -521,6 +525,27 @@ export function buildResources(ctx: AIOStreamsContext): void {
     }
 
     ctx.supportedResources[instanceId] = addonResources;
+  }
+
+  const recommendations = recommendationManifest(ctx.userData);
+  if (recommendations?.catalogs.length) {
+    ctx.manifests[recommendationSource] = recommendations;
+    const catalogs = recommendations.catalogs.map((catalog) => ({
+      ...catalog,
+      id: `${recommendationSource}.${catalog.id}`,
+    }));
+    ctx.finalCatalogs.push(...catalogs);
+    const types = catalogs.map(
+      (catalog) =>
+        ctx.userData.catalogModifications?.find(
+          (item) => item.id === catalog.id && item.type === catalog.type
+        )?.overrideType ?? catalog.type
+    );
+    const catalog = ctx.finalResources.find(
+      (resource) => resource.name === 'catalog'
+    );
+    if (catalog) catalog.types = [...new Set([...catalog.types, ...types])];
+    else ctx.finalResources.push({ name: 'catalog', types: [...new Set(types)] });
   }
 
   // if meta resource exists, add aiostreamserror to idPrefixes only if idPrefixes is defined

@@ -790,7 +790,11 @@ export class TMDBMetadata {
     );
   }
 
-  private async getJson(path: string, params: Record<string, string> = {}) {
+  protected async getJson(
+    path: string,
+    params: Record<string, string> = {},
+    sensitive = false
+  ) {
     const url = new URL(API_BASE_URL + path);
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
@@ -799,6 +803,8 @@ export class TMDBMetadata {
     const response = await makeRequest(url.toString(), {
       timeout: 5000,
       headers: this.getHeaders(),
+      sensitive,
+      rawOptions: sensitive ? { redirect: 'error' } : undefined,
     });
     if (response.status === 404) return undefined;
     if (!response.ok) {

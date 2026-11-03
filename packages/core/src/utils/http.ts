@@ -109,6 +109,8 @@ export interface RequestOptions {
   rawOptions?: RequestInit;
   /** Still arms 429 cooldowns, but is never refused by one. */
   ignoreCooldown?: boolean;
+  /** Keep paths, query parameters, headers and network error details out of logs. */
+  sensitive?: boolean;
 }
 
 const CREDENTIAL_PARAM = /apikey|api_key|token|secret|password|passwd|passkey/i;
@@ -168,6 +170,10 @@ function getEgress(urlObj: URL, options: RequestOptions): string {
   return useProxy ? String(proxyIndex) : '';
 }
 
+function requestLogUrl(url: URL, options: RequestOptions): string {
+  return options.sensitive ? url.origin : makeUrlLogSafe(url.toString());
+}
+
 async function checkCooldown(
   urlObj: URL,
   headers: Headers,
@@ -184,7 +190,7 @@ async function checkCooldown(
   const remaining = entry ? entry.until - Date.now() : 0;
   if (remaining > 0) {
     logger.debug(
-      { url: makeUrlLogSafe(urlObj.toString()), remaining },
+      { url: requestLogUrl(urlObj, options), remaining },
       'skipping request, upstream cooling down'
     );
     throw new RateLimitedError(Math.ceil(remaining / 1000));
@@ -248,11 +254,11 @@ export async function makeRequest(url: string, options: RequestOptions) {
     !options.ignoreRecursion
   ) {
     logger.warn(
-      { url: makeUrlLogSafe(urlObj.toString()), count: currentCount },
+      { url: requestLogUrl(urlObj, options), count: currentCount },
       'detected possible recursive requests, blocking'
     );
     throw new PossibleRecursiveRequestError(
-      `Possible recursive request to ${makeUrlLogSafe(urlObj.toString())}`
+      `Possible recursive request to ${requestLogUrl(urlObj, options)}`
     );
   }
   if (!options.ignoreRecursion) {
@@ -311,14 +317,14 @@ export async function makeRequest(url: string, options: RequestOptions) {
 
     logger.debug(
       {
-        url: makeUrlLogSafe(urlObj.toString()),
+        url: requestLogUrl(urlObj, options),
         method,
         ...(redirects > 0 ? { redirects } : {}),
         tunneled: !!dispatcher
           ? 'true' +
             (options.forceProxy ? ' (forced)' : ` (proxy index ${proxyIndex})`)
           : 'false',
-        ...(appConfig.logging.logSensitiveInfo
+        ...(!options.sensitive && appConfig.logging.logSensitiveInfo
           ? {
               headers: Object.fromEntries(headers.entries()),
               dispatcher:
@@ -347,6 +353,7 @@ export async function makeRequest(url: string, options: RequestOptions) {
         throw err.cause;
       }
       if (
+        !options.sensitive &&
         err instanceof Error &&
         err.name === 'TypeError' &&
         err.message === 'fetch failed' &&
@@ -381,7 +388,7 @@ export async function makeRequest(url: string, options: RequestOptions) {
 
     if (redirects >= MAX_REDIRECTS) {
       throw new Error(
-        `Exceeded ${MAX_REDIRECTS} redirects requesting ${makeUrlLogSafe(url)}`
+        `Exceeded ${MAX_REDIRECTS} redirects requesting ${requestLogUrl(new URL(url), options)}`
       );
     }
 

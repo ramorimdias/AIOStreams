@@ -1062,6 +1062,36 @@ export const UserDataSchema = z.object({
     .optional(),
   tmdbAccessToken: z.string().optional(),
   tmdbApiKey: z.string().optional(),
+  simklClientId: z.string().trim().min(1).max(256).optional(),
+  simklAccessToken: z.string().trim().min(1).max(512).optional(),
+  simklVariantAccounts: z
+    .record(
+      z.string().regex(/^[a-z0-9][a-z0-9_-]{0,31}$/),
+      z.object({
+        clientId: z.string().trim().max(256),
+        accessToken: z.string().trim().max(512),
+      })
+    )
+    .optional(),
+  personalizedRecommendations: z
+    .object({
+      enabled: z.boolean().optional(),
+      style: z.enum(['mainstream', 'balanced', 'gems', 'all']).optional(),
+      fromYear: z.number().int().min(1870).max(2100).optional(),
+      toYear: z.number().int().min(1870).max(2100).optional(),
+      excludedMovieGenres: z.array(z.string().regex(/^\d+$/)).max(30).optional(),
+      excludedSeriesGenres: z.array(z.string().regex(/^\d+$/)).max(30).optional(),
+      excludedKeywords: z.array(z.string().regex(/^\d+$/)).max(30).optional(),
+      refreshHours: z.number().int().min(1).max(168).optional(),
+    })
+    .refine(
+      ({ fromYear, toYear }) => !fromYear || !toYear || fromYear <= toYear,
+      {
+        path: ['toYear'],
+        message: 'Latest release year must be at least the earliest release year',
+      }
+    )
+    .optional(),
   tvdbApiKey: z.string().optional(),
   pmdbApiKey: z.string().optional(),
   yearMatching: z

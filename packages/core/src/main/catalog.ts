@@ -24,6 +24,11 @@ import {
   type MergedCatalogSkipState,
 } from './caches.js';
 
+import {
+  getRecommendationCatalog,
+  recommendationSource,
+} from '../recommendations/catalogs.js';
+
 const logger = createLogger('core');
 
 export function convertDiscoverDeepLinks(
@@ -98,6 +103,23 @@ export async function fetchRawCatalogItems(
   items: MetaPreview[];
   error?: { title: string; description: string };
 }> {
+  if (addonInstanceId === recommendationSource) {
+    const modification = ctx.userData.catalogModifications?.find(
+      (item) =>
+        item.id === `${addonInstanceId}.${catalogId}` &&
+        (item.type === type || item.overrideType === type)
+    );
+    return {
+      success: true,
+      items: parsedExtras?.skip
+        ? []
+        : await getRecommendationCatalog(
+            ctx.userData,
+            modification?.type ?? type,
+            catalogId
+          ),
+    };
+  }
   const addon = ctx.addons.find((a) => a.instanceId === addonInstanceId);
 
   if (!addon) {
@@ -801,7 +823,9 @@ export async function getCatalog(
     };
   }
 
-  const shuffleCacheKey = `${type}-${actualCatalogId}-${parsedExtras?.toString() || ''}-${userScopeKey(ctx.userData)}`;
+  const shuffleId =
+    addonInstanceId === recommendationSource ? id : actualCatalogId;
+  const shuffleCacheKey = `${type}-${shuffleId}-${parsedExtras?.toString() || ''}-${userScopeKey(ctx.userData)}`;
 
   const catalog = await applyCatalogModifications(
     ctx,

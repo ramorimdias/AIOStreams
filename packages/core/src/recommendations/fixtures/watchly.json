@@ -1,0 +1,147 @@
+{
+  "now": 1738281600000,
+  "history": [
+    {
+      "imdb": "tt1",
+      "rating": 9,
+      "watchedAt": 1738281600000,
+      "plays": 1
+    },
+    {
+      "imdb": "tt2",
+      "rating": 7,
+      "watchedAt": 1735689600000,
+      "plays": 1
+    }
+  ],
+  "titles": [
+    {
+      "id": 1,
+      "name": "Alpha",
+      "genres": ["28", "18"],
+      "keywords": ["7"],
+      "year": 2019,
+      "cast": ["1", "2"],
+      "directors": ["5"],
+      "countries": ["US"],
+      "runtime": 110,
+      "rating": 8,
+      "votes": 600,
+      "popularity": 70
+    },
+    {
+      "id": 2,
+      "name": "Beta",
+      "genres": ["18"],
+      "keywords": ["7", "8"],
+      "year": 1999,
+      "cast": ["1"],
+      "directors": ["6"],
+      "countries": ["JP"],
+      "runtime": 150,
+      "rating": 7.3,
+      "votes": 300,
+      "popularity": 40
+    }
+  ],
+  "evidence": [2.5, 0.5518191617571635],
+  "profile": {
+    "genres": {
+      "28": 2.25,
+      "18": 2.4558280087358213
+    },
+    "keywords": {
+      "7": 2.2843486025585698,
+      "8": 0.3862734132300144
+    },
+    "eras": {
+      "2010s": 1.5,
+      "1990s": 0.3310914970542981
+    },
+    "countries": {
+      "US": 0.75,
+      "JP": 0.16554574852714904
+    },
+    "cast": {
+      "1": 2.937019631861019,
+      "2": 1.575
+    },
+    "directors": {
+      "5": 2.25,
+      "6": 0.4966372455814472
+    },
+    "runtime": {
+      "short": 0.75,
+      "medium": 0.16554574852714904
+    }
+  },
+  "candidates": [
+    {
+      "id": 101,
+      "name": "Match",
+      "genres": ["28", "18"],
+      "keywords": ["7"],
+      "year": 2019,
+      "cast": ["1", "2"],
+      "directors": ["5"],
+      "countries": ["US"],
+      "runtime": 110,
+      "rating": 8,
+      "votes": 600,
+      "popularity": 70,
+      "imdb": "tt101"
+    },
+    {
+      "id": 102,
+      "name": "Partial match",
+      "genres": ["18"],
+      "keywords": ["7", "8"],
+      "year": 1999,
+      "cast": ["1"],
+      "directors": ["6"],
+      "countries": ["JP"],
+      "runtime": 150,
+      "rating": 7.3,
+      "votes": 300,
+      "popularity": 40,
+      "imdb": "tt102"
+    },
+    {
+      "id": 103,
+      "name": "Watched",
+      "genres": ["28", "18"],
+      "keywords": ["7"],
+      "year": 2019,
+      "cast": ["1", "2"],
+      "directors": ["5"],
+      "countries": ["US"],
+      "runtime": 110,
+      "rating": 8,
+      "votes": 600,
+      "popularity": 70,
+      "imdb": "tt1"
+    },
+    {
+      "id": 104,
+      "name": "Low confidence",
+      "genres": ["28", "18"],
+      "keywords": ["7"],
+      "year": 2019,
+      "cast": ["1", "2"],
+      "directors": ["5"],
+      "countries": ["US"],
+      "runtime": 110,
+      "rating": 8,
+      "votes": 25,
+      "popularity": 70,
+      "imdb": "tt104"
+    }
+  ],
+  "scores": [
+    3.379992485305513, 2.2467998211246845, 3.379992485305513, 3.0569490126154015
+  ],
+  "eligible": [101, 102],
+  "genre_exclusion": [102],
+  "catalog": [101, 102],
+  "order": [101, 103, 104, 102]
+}

@@ -83,6 +83,9 @@ type IgnoredKeys =
   | 'ip'
   | 'addonCategories'
   | 'appliedTemplates'
+  | 'simklClientId'
+  | 'simklAccessToken'
+  | 'simklVariantAccounts'
   | 'precacheNextEpisode'
   | 'alwaysPrecache'
   | 'precacheCondition';
@@ -211,6 +214,7 @@ export const FIELD_META: Omit<Record<keyof UserData, FieldMeta>, IgnoredKeys> = 
 
   proxy: { label: 'Proxy', group: 'proxy', type: 'scalar', menu: 'proxy' },
 
+  personalizedRecommendations: { label: 'Personalized Recommendations', group: 'misc', type: 'scalar', menu: 'miscellaneous', subTab: 'recommendations', sectionId: 'personalized-recommendations', ignoreForParentConfig: true },
   tmdbApiKey: { label: 'TMDB API Key', group: 'metadata', type: 'scalar', menu: 'services', subTab: 'metadata', sectionId: 'tmdb' },
   tmdbAccessToken: { label: 'TMDB Access Token', group: 'metadata', type: 'scalar', menu: 'services', subTab: 'metadata', sectionId : 'tmdb' },
   tvdbApiKey: { label: 'TVDB API Key', group: 'metadata', type: 'scalar', menu: 'services', subTab: 'metadata' },
