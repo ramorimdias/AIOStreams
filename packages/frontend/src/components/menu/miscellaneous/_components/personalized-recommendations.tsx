@@ -3,6 +3,13 @@ import { SimklConnect } from './simkl-connect';
 import { Select } from '@aiostreams/ui/select';
 import { Switch } from '@aiostreams/ui/switch';
 import { TextInput } from '@aiostreams/ui/text-input';
+import {
+  GenreExclusions,
+  KeywordExclusions,
+  ReleaseYearRange,
+  movieGenres,
+  seriesGenres,
+} from './recommendation-filters';
 import { useUserData } from '@/context/userData';
 import { SettingsCard } from '../../../shared/settings-card';
 import { useState } from 'react';
@@ -19,6 +26,10 @@ export function PersonalizedRecommendations() {
   const { uuid, userData, setUserData } = useUserData();
   const [variant, setVariant] = useState('');
   const settings = userData.personalizedRecommendations ?? {};
+  const scopeName =
+    userData.variants?.find(({ id }) => id === variant)?.name ||
+    variant ||
+    'Base configuration';
   const update = (patch: Partial<Settings>) =>
     setUserData((prev) => ({
       ...prev,
@@ -42,7 +53,7 @@ export function PersonalizedRecommendations() {
         {settings.enabled && (
           <>
             <Select
-              label="Simkl account scope"
+              label="Simkl account and catalog scope"
               value={variant || '__base'}
               onValueChange={(value) =>
                 setVariant(value === '__base' ? '' : value)
@@ -64,9 +75,10 @@ export function PersonalizedRecommendations() {
           <SettingsCard
             title="Recommendation Catalogs"
             description={
-              variant
-                ? 'Choose which rows appear for this variant. Genre and theme slots follow this viewer’s tastes.'
-                : 'Choose which rows appear for the base configuration. Genre and theme slots follow the linked account’s tastes.'
+              <>
+                Editing <strong>{scopeName}</strong>. Choose which rows this
+                scope shows, then save your configuration.
+              </>
             }
           >
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -137,21 +149,10 @@ export function PersonalizedRecommendations() {
                   { value: 'all', label: 'All' },
                 ]}
               />
-              <TextInput
-                label="Earliest release year"
-                type="number"
-                value={settings.fromYear?.toString() ?? ''}
-                onValueChange={(value) =>
-                  update({ fromYear: value ? Number(value) : undefined })
-                }
-              />
-              <TextInput
-                label="Latest release year"
-                type="number"
-                value={settings.toYear?.toString() ?? ''}
-                onValueChange={(value) =>
-                  update({ toYear: value ? Number(value) : undefined })
-                }
+              <ReleaseYearRange
+                fromYear={settings.fromYear}
+                toYear={settings.toYear}
+                onChange={(fromYear, toYear) => update({ fromYear, toYear })}
               />
               <TextInput
                 label="Refresh interval in hours"
@@ -162,42 +163,30 @@ export function PersonalizedRecommendations() {
                   update({ refreshHours: value ? Number(value) : undefined })
                 }
               />
-              <TextInput
-                label="Excluded movie TMDB genre IDs"
-                defaultValue={settings.excludedMovieGenres?.join(',') ?? ''}
-                onBlur={(event) =>
-                  update({
-                    excludedMovieGenres: event.target.value
-                      .split(',')
-                      .map((id) => id.trim())
-                      .filter(Boolean),
-                  })
+              <GenreExclusions
+                label="Exclude movie genres"
+                genres={movieGenres}
+                value={settings.excludedMovieGenres ?? []}
+                onChange={(excludedMovieGenres) =>
+                  update({ excludedMovieGenres })
                 }
               />
-              <TextInput
-                label="Excluded series TMDB genre IDs"
-                defaultValue={settings.excludedSeriesGenres?.join(',') ?? ''}
-                onBlur={(event) =>
-                  update({
-                    excludedSeriesGenres: event.target.value
-                      .split(',')
-                      .map((id) => id.trim())
-                      .filter(Boolean),
-                  })
+              <GenreExclusions
+                label="Exclude series genres"
+                genres={seriesGenres}
+                value={settings.excludedSeriesGenres ?? []}
+                onChange={(excludedSeriesGenres) =>
+                  update({ excludedSeriesGenres })
                 }
               />
-              <TextInput
-                label="Excluded TMDB keyword IDs"
-                defaultValue={settings.excludedKeywords?.join(',') ?? ''}
-                onBlur={(event) =>
-                  update({
-                    excludedKeywords: event.target.value
-                      .split(',')
-                      .map((id) => id.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
+              <div className="md:col-span-2">
+                <KeywordExclusions
+                  value={settings.excludedKeywords ?? []}
+                  onChange={(excludedKeywords) => update({ excludedKeywords })}
+                  apiKey={userData.tmdbApiKey}
+                  accessToken={userData.tmdbAccessToken}
+                />
+              </div>
             </div>
           </SettingsCard>
         </>

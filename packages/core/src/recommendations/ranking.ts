@@ -23,6 +23,7 @@ export type Title = {
   description?: string;
   poster?: string;
   year?: number;
+  releaseDate?: string;
   genres: string[];
   genreNames?: Record<string, string>;
   keywords: string[];

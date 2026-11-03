@@ -274,6 +274,7 @@ function title(raw: z.infer<typeof rawTitle>): Title {
       ? 'https://image.tmdb.org/t/p/w500' + raw.poster_path
       : undefined,
     year: year || undefined,
+    releaseDate: raw.release_date || raw.first_air_date || undefined,
     genres: (raw.genre_ids ?? raw.genres?.map(({ id }) => id) ?? []).map(
       String
     ),
@@ -317,7 +318,29 @@ const cache = Cache.getInstance<string, unknown>(
 const ttl = 86400;
 const limitTmdb = pLimit(12);
 
+const keywordSchema = z.object({ id: z.number(), name: z.string() });
+
 export class RecommendationTmdb extends TMDBMetadata {
+  async keywords(query: string, ids: string[]) {
+    const search = query
+      ? await this.request('/search/keyword', { query })
+      : undefined;
+    const matches = search
+      ? z.object({ results: z.array(keywordSchema) }).parse(search).results
+      : [];
+    const known = new Map(matches.map((item) => [String(item.id), item]));
+    await Promise.all(
+      ids
+        .filter((id) => !known.has(id))
+        .map(async (id) => {
+          const raw = await this.request('/keyword/' + id);
+          const item = keywordSchema.safeParse(raw);
+          if (item.success) known.set(id, item.data);
+        })
+    );
+    return [...known.values()];
+  }
+
   private async request(path: string, params: Record<string, string> = {}) {
     return cache.wrap(
       () =>

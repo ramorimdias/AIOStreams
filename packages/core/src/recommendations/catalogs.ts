@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { setTimeout } from 'node:timers/promises';
 import type { Manifest, MetaPreview, UserData } from '../db/schemas.js';
 import { Cache } from '../utils/cache.js';
 import { userScopeKey } from '../utils/user-scope.js';
@@ -21,6 +22,7 @@ import {
 
 import { bootstrap } from '../config/bootstrap.js';
 import { SimklConnection } from './simkl-connection.js';
+import { applyVariants } from '../variants/runtime.js';
 
 import {
   genreRows,
@@ -76,7 +78,7 @@ function catalogEnabled(
 
 export async function recommendationManifest(
   user: UserData,
-  refreshEmpty = true
+  preview = false
 ): Promise<Manifest | undefined> {
   if (!user.personalizedRecommendations?.enabled || !user.uuid) return;
   const variant = simklVariant(user);
@@ -85,19 +87,34 @@ export async function recommendationManifest(
   const source = recommendationSourceId(variant);
   const catalogs = await Promise.all(
     types.map(async (type) => {
-      const cached = await snapshots.get(recommendationKey(user, type, grant));
+      const key = recommendationKey(user, type, grant);
+      let cached = await snapshots.get(key);
       const enabled = rowIds.filter((id) =>
         catalogEnabled(user, source, type, id)
       );
-      const available = enabled.filter(
-        (id) =>
+      if (preview && enabled.length) {
+        const warmup = getRecommendationCatalog(user, type, enabled[0]).catch(
+          () => undefined
+        );
+        if (!cached) {
+          await Promise.race([
+            warmup,
+            setTimeout(1500, undefined, { ref: false }),
+          ]);
+          cached = await snapshots.get(key);
+        }
+      }
+      const available = enabled.filter((id) => {
+        if (preview && !cached?.rows[id]?.length) return false;
+        return (
           !namedRows.has(id) ||
           !cached ||
           (cached.names?.[id] && cached.rows[id]?.length)
-      );
+        );
+      });
       // A viewer who enables only genre or theme rows still needs a refresh
       // after the current snapshot has no matches and advertises no catalogs.
-      if (refreshEmpty && enabled.length && !available.length) {
+      if (!preview && enabled.length && !available.length) {
         void getRecommendationCatalog(user, type, enabled[0]).catch(
           () => undefined
         );
@@ -133,16 +150,19 @@ export async function recommendationCatalogPreviews(user: UserData) {
       .map(({ id }) => id),
   ];
   const manifests = await Promise.all(
-    scopes.map((variant) =>
-      recommendationManifest(
-        {
-          ...user,
-          activeVariants: variant ? [variant] : undefined,
-          autoVariants: undefined,
-        },
-        false
-      )
-    )
+    scopes.map(async (variant) => {
+      const base = {
+        ...user,
+        activeVariants: undefined,
+        autoVariants: undefined,
+      };
+      try {
+        const scoped = variant ? applyVariants(base, [variant]).userData : base;
+        return await recommendationManifest(scoped, true);
+      } catch {
+        return undefined;
+      }
+    })
   );
   return manifests.flatMap(
     (manifest) =>
@@ -210,6 +230,12 @@ export function eligible(
     type === 'movie'
       ? settings.excludedMovieGenres
       : settings.excludedSeriesGenres;
+  const today = new Date(Date.now()).toISOString().slice(0, 10);
+  const releaseAllowed = settings.toYear
+    ? (title.year ?? Infinity) <= settings.toYear
+    : title.releaseDate
+      ? title.releaseDate <= today
+      : (title.year ?? 0) <= Number(today.slice(0, 4));
   return Boolean(
     title.name &&
     title.imdb &&
@@ -220,7 +246,7 @@ export function eligible(
     title.rating >= threshold.rating &&
     (!('max' in threshold) || title.votes <= threshold.max) &&
     (!settings.fromYear || (title.year ?? 0) >= settings.fromYear) &&
-    (!settings.toYear || (title.year ?? Infinity) <= settings.toYear) &&
+    releaseAllowed &&
     !title.genres.some((id) => excluded?.includes(id)) &&
     !title.keywords.some((id) => settings.excludedKeywords?.includes(id))
   );
@@ -331,7 +357,10 @@ async function refresh(
   if ('max' in threshold) params['vote_count.lte'] = String(threshold.max);
   const date = type === 'movie' ? 'primary_release_date' : 'first_air_date';
   if (settings.fromYear) params[date + '.gte'] = settings.fromYear + '-01-01';
-  if (settings.toYear) params[date + '.lte'] = settings.toYear + '-12-31';
+  const latest = settings.toYear
+    ? settings.toYear + '-12-31'
+    : new Date(now).toISOString().slice(0, 10);
+  params[date + '.lte'] = latest;
   const excluded =
     type === 'movie'
       ? settings.excludedMovieGenres
@@ -385,7 +414,7 @@ async function refresh(
             row: 'top' as const,
             filter: {
               [date + '.gte']: from + '-01-01',
-              [date + '.lte']: to + '-12-31',
+              [date + '.lte']: [to + '-12-31', latest].sort()[0],
             },
           },
         ]

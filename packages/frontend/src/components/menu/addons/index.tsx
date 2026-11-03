@@ -521,7 +521,8 @@ function Content() {
                     icon: <MdOutlineDataset className="w-4 h-4" />,
                     content: (
                       <div className="space-y-6">
-                        {userData.presets.length === 0 ? (
+                        {userData.presets.length === 0 &&
+                        !userData.personalizedRecommendations?.enabled ? (
                           <Card className="p-8 text-center">
                             <p className="text-[--muted]">
                               Install some addons first to configure catalogs.
@@ -529,6 +530,16 @@ function Content() {
                           </Card>
                         ) : (
                           <>
+                            {userData.personalizedRecommendations?.enabled &&
+                              !catalogLoading &&
+                              !Object.keys(recommendationNames ?? {})
+                                .length && (
+                                <p className="text-sm text-[--muted]">
+                                  Recommendation rows appear after a connected
+                                  scope has results. Refresh catalogs after the
+                                  first generation.
+                                </p>
+                              )}
                             <MergedCatalogsCard
                               recommendationNames={recommendationNames}
                               request={mergeRequest}

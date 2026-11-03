@@ -19,6 +19,7 @@ export * from './shares/index.js';
 export * from './arr/index.js';
 export * from './proxy/index.js';
 export * from './linked-accounts/index.js';
+export { RecommendationTmdb } from './recommendations/sources.js';
 export { recommendationCatalogPreviews } from './recommendations/catalogs.js';
 export { SimklConnection } from './recommendations/simkl-connection.js';
 export * from './community/index.js';

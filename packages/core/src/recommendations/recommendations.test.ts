@@ -25,6 +25,7 @@ import {
   type Title,
 } from './ranking.js';
 import { RecommendationTmdb, SimklHistory } from './sources.js';
+import { recommendationRowIds } from './rows.js';
 
 const fixture = JSON.parse(
   readFileSync(new URL('./fixtures/watchly.json', import.meta.url), 'utf8')
@@ -174,7 +175,7 @@ test('diversity caps primary genres and recurring cast', () => {
   assert.equal(diversify(sameGenre, 4).length, 2);
 });
 
-test('catalog registration is opt-in and variant authentication does not fall back to the base user', async () => {
+test('catalog registration is opt-in and variant authentication does not fall back to the base user', async (t) => {
   const disabled = { ...user, personalizedRecommendations: undefined };
   const ordinary = await new AIOStreams(disabled).initialise();
   assert.equal(ordinary.getCatalogs().length, 0);
@@ -222,35 +223,9 @@ test('catalog registration is opt-in and variant authentication does not fall ba
     (await viewer.getCatalog('movie', recommendationSource + '.top')).data,
     []
   );
-  const previews = await recommendationCatalogPreviews({
-    ...user,
-    variants: [
-      { id: 'viewer', name: 'Family', script: '' },
-      { id: 'kids', script: '' },
-    ],
-    catalogModifications: [
-      {
-        id: recommendationSource + '-viewer.top',
-        type: 'movie',
-        enabled: false,
-      },
-    ],
-  });
-  assert.ok(
-    previews.some(({ addonName }) => addonName === 'Recommendations (Family)')
-  );
-  assert.ok(
-    previews.some(({ addonName }) => addonName === 'Recommendations (Base)')
-  );
-  assert.ok(
-    !previews.some(
-      ({ id, type }) =>
-        id === recommendationSource + '-viewer.top' && type === 'movie'
-    )
-  );
-  assert.ok(
-    !previews.some(({ id }) => id.startsWith(recommendationSource + '-kids.'))
-  );
+  t.mock.method(SimklHistory.prototype, 'history', async () => []);
+  const previews = await recommendationCatalogPreviews(user);
+  assert.deepEqual(previews, []);
   assert.notEqual(
     recommendationKey(user, 'movie', 'base-grant'),
     recommendationKey(scoped, 'movie', 'base-grant')
@@ -326,6 +301,22 @@ test('catalogs share a cold refresh and return stale rows through an outage', as
   assert.equal(names.genres, 'Action');
   assert.equal(names['genres-2'], 'Drama');
   assert.equal(names.themes, 'Friendship');
+  const previews = await recommendationCatalogPreviews({
+    ...scoped,
+    catalogModifications: recommendationRowIds.map((id) => ({
+      id: recommendationSource + '.' + id,
+      type: 'series',
+      enabled: false,
+    })),
+  });
+  assert.ok(
+    previews.some(
+      ({ name, addonName }) =>
+        name === 'Because you watched Friends' &&
+        addonName === 'Recommendations (Base)'
+    )
+  );
+  assert.ok(!previews.some(({ name }) => name === 'Favorite Theme 2'));
   assert.equal(names['themes-2'], undefined);
   const muted = {
     ...scoped,
@@ -478,6 +469,39 @@ test('base and variant account histories produce separate catalogs for the same 
     [candidates[0].imdb]
   );
   assert.equal(request.mock.callCount(), 4);
+  const previews = await recommendationCatalogPreviews({
+    ...base,
+    trusted: true,
+    variants: [
+      { id: 'viewer', name: 'Rodrigo', script: 'set addonName = "Viewer"' },
+    ],
+    catalogModifications: [
+      ...['', '-viewer'].flatMap((suffix) =>
+        recommendationRowIds.map((id) => ({
+          id: recommendationSource + suffix + '.' + id,
+          type: 'series',
+          enabled: false,
+        }))
+      ),
+      {
+        id: recommendationSource + '-viewer.top',
+        type: 'movie',
+        enabled: false,
+      },
+    ],
+  });
+  assert.ok(
+    previews.some(
+      ({ addonName, name }) =>
+        addonName === 'Recommendations (Rodrigo)' &&
+        name === 'Because you loved ' + candidates[1].name
+    )
+  );
+  assert.ok(
+    !previews.some(({ id }) => id === recommendationSource + '-viewer.top')
+  );
+  assert.ok(previews.some(({ id }) => id === recommendationSource + '.top'));
+  assert.equal(request.mock.callCount(), 4);
 });
 
 test('Simkl Retry-After suppresses concurrent polls for both media types', async (t) => {
@@ -498,4 +522,37 @@ test('Simkl Retry-After suppresses concurrent polls for both media types', async
       assert.equal(outcome.reason.seconds, 120);
   }
   assert.equal(request.mock.callCount(), 1);
+});
+
+test('the open year range ends today and an explicit future year is preserved', (t) => {
+  t.mock.method(Date, 'now', () => Date.UTC(2026, 10, 3));
+  const future = {
+    ...fixture.candidates[0],
+    year: 2026,
+    releaseDate: '2026-12-01',
+  };
+  assert.equal(eligible(future, new Set(), {}, 'movie'), false);
+  assert.equal(eligible(future, new Set(), { toYear: 2026 }, 'movie'), true);
+});
+
+test('keyword lookup resolves saved IDs and reuses search matches', async (t) => {
+  const tmdb = new RecommendationTmdb({ apiKey: 'test-key' });
+  const upstream = t.mock.method(
+    tmdb as unknown as { getJson: (path: string) => Promise<unknown> },
+    'getJson',
+    async (path: string) => {
+      if (path === '/search/keyword')
+        return { results: [{ id: 123, name: 'test keyword' }] };
+      assert.equal(path, '/keyword/456');
+      return { id: 456, name: 'saved keyword' };
+    }
+  );
+  assert.deepEqual(
+    await tmdb.keywords('regression keyword lookup', ['123', '456']),
+    [
+      { id: 123, name: 'test keyword' },
+      { id: 456, name: 'saved keyword' },
+    ]
+  );
+  assert.equal(upstream.mock.callCount(), 2);
 });

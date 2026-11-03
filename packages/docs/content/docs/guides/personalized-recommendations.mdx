@@ -18,7 +18,9 @@ Set `SIMKL_CLIENT_ID` in the AIOStreams server's `.env` or deployment environmen
 3. Return to AIOStreams and select **Check authorization**. The connection is saved immediately. Save the AIOStreams configuration to apply recommendation preferences.
 4. Use the instance’s TMDB credential or configure your own under **Services → Metadata → TMDB**. Use **Recommendation Catalogs** to turn individual movie and series rows on or off for the selected scope. Save, then refresh **Addons → Catalogs** to reorder the active rows, grouped under **Recommendations (scope)**.
 
-The first catalog load can take longer while AIOStreams fetches history and title metadata. Generic titles are shown until the first results are ready. The next catalog-list refresh can then show names such as **Because you watched Friends**, along with rows for individual favorite genres and themes. Afterward, the refresh interval controls how often catalog requests check for Simkl changes. The default is six hours. The previous rows remain available during a refresh or a temporary provider outage. A row can be empty if there are no suitable matches.
+The first catalog load can take longer while AIOStreams fetches history and title metadata. The Addons catalog editor lists recommendation rows once they have results. Refresh the list after the initial generation finishes. The next catalog-list refresh can then show names such as **Because you watched Friends**, along with rows for individual favorite genres and themes. Afterward, the refresh interval controls how often catalog requests check for Simkl changes. The default is six hours. The previous rows remain available during a refresh or a temporary provider outage. A row can be empty if there are no suitable matches.
+
+Under **Discovery Preferences**, use the two release-year handles to set a range. Leave the upper handle at **Now** to include releases through today. Select named movie and series genre chips to exclude them, or search TMDB to add keyword exclusions.
 
 ## Configuration variants
 

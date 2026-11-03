@@ -566,6 +566,12 @@ export async function resolveStreamExpressions(
 /**
  * Get catalogs for user data
  */
+export function lookupRecommendationKeywords(query: string, ids: string[], apiKey?: string, accessToken?: string) {
+  return api<{ id: number; name: string }[]>('POST /catalogs/keywords', {
+    body: { query, ids, apiKey, accessToken },
+  });
+}
+
 export async function fetchCatalogs(userData: UserData, credentials?: Credentials) {
   return api<CatalogInfo[]>('POST /catalogs', {
     ...(credentials ? authed(credentials) : {}),

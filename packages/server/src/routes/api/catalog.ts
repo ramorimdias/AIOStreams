@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
 import { resolveConfigCredentials } from '../../utils/basic-auth.js';
 import { createResponse } from '../../utils/responses.js';
 import { catalogApiRateLimiter } from '../../middlewares/ratelimit.js';
@@ -15,6 +16,7 @@ import {
   mergeConfigs,
   requiresOnlyGenre,
   recommendationCatalogPreviews,
+  RecommendationTmdb,
 } from '@aiostreams/core';
 
 const router: Router = Router();
@@ -22,6 +24,45 @@ const router: Router = Router();
 const logger = createLogger('server');
 router.use(catalogApiRateLimiter);
 router.use(attachSession);
+
+const keywordRequest = z.object({
+  query: z.string().trim().max(100).default(''),
+  ids: z
+    .array(z.string().regex(/^\d{1,10}$/))
+    .max(30)
+    .default([]),
+  apiKey: z.string().max(512).optional(),
+  accessToken: z.string().max(512).optional(),
+});
+
+router.post('/keywords', async (req, res) => {
+  const input = keywordRequest.safeParse(req.body);
+  if (!input.success) {
+    res
+      .status(400)
+      .json(
+        createResponse({ success: false, detail: 'Invalid keyword search.' })
+      );
+    return;
+  }
+  try {
+    const { query, ids, apiKey, accessToken } = input.data;
+    const data = await new RecommendationTmdb({ apiKey, accessToken }).keywords(
+      query,
+      ids
+    );
+    res.json(createResponse({ success: true, data }));
+  } catch {
+    res
+      .status(502)
+      .json(
+        createResponse({
+          success: false,
+          detail: 'TMDB keyword lookup is unavailable.',
+        })
+      );
+  }
+});
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   const { userData } = req.body;
