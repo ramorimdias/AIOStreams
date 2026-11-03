@@ -109,7 +109,8 @@ export async function recommendationManifest(
           }
         }
         const available = enabled.filter((id) => {
-          if ((preview || anime) && !cached?.rows[id]?.length) return false;
+          if (id === 'anime-top') return true;
+          if (preview && !cached?.rows[id]?.length) return false;
           return (
             !namedRows.has(id) ||
             !cached ||
@@ -310,7 +311,7 @@ async function refresh(
     creators: [],
     positive: [],
   };
-  if (!history.length)
+  if (!anime && !history.length)
     return { checkedAt: now, generatedAt: now, fingerprint, rows: empty };
 
   const tmdb = new RecommendationTmdb({
@@ -339,7 +340,7 @@ async function refresh(
       return title ? { history: item, title, media } : undefined;
     })
   ).filter((item) => item !== undefined);
-  if (!enriched.length)
+  if (!anime && !enriched.length)
     return { checkedAt: now, generatedAt: now, fingerprint, rows: empty };
 
   enriched.sort(
@@ -479,15 +480,32 @@ async function refresh(
   if (anime) {
     params.with_genres = '16';
     params.with_original_language = 'ja';
+    if ('max' in threshold) params['vote_count.lte'] = String(threshold.max);
     discoverRows.splice(
       0,
       discoverRows.length,
-      { row: 'anime-top', filter: {} },
+      ...[1, 2, 3].map((page) => ({
+        row: 'anime-top' as const,
+        filter: { page: String(page) },
+      })),
       ...themes.map((id) => ({
         row: 'anime-top' as const,
         filter: { with_keywords: id },
       }))
     );
+  }
+  if (!anime) {
+    for (const [row, seed] of [
+      ['watched', recent],
+      ['loved', loved],
+    ] as const) {
+      if (!seed?.genres.length) continue;
+      const filter = { with_genres: seed.genres.slice(0, 3).join('|') };
+      discoverRows.push(
+        { row, filter },
+        { row, filter: { ...filter, page: '2' } }
+      );
+    }
   }
   const discovered = await mapBatches(
     discoverRows,
@@ -502,7 +520,7 @@ async function refresh(
       (item) => item.votes >= threshold.min && item.rating >= threshold.rating
     );
     const similar =
-      viable.length < 12
+      viable.length < limit
         ? await tmdb.candidates(type, {}, seed.id, 'similar')
         : [];
     return { id: seed.id, titles: [...titles, ...similar] };
@@ -516,11 +534,27 @@ async function refresh(
         ]
       : [],
     top: [
-      ...discovered.flatMap(({ titles }) => titles),
+      ...discovered
+        .filter(({ row }) => row !== 'watched' && row !== 'loved')
+        .flatMap(({ titles }) => titles),
       ...seeded.flatMap(({ titles }) => titles),
     ],
-    watched: recent ? (source.get(recent.id) ?? []) : [],
-    loved: loved ? (source.get(loved.id) ?? []) : [],
+    watched: recent
+      ? [
+          ...(source.get(recent.id) ?? []),
+          ...discovered
+            .filter(({ row }) => row === 'watched')
+            .flatMap(({ titles }) => titles),
+        ]
+      : [],
+    loved: loved
+      ? [
+          ...(source.get(loved.id) ?? []),
+          ...discovered
+            .filter(({ row }) => row === 'loved')
+            .flatMap(({ titles }) => titles),
+        ]
+      : [],
     genres: discovered.find(({ row }) => row === 'genres')?.titles ?? [],
     'genres-2': discovered.find(({ row }) => row === 'genres-2')?.titles ?? [],
     'genres-3': discovered.find(({ row }) => row === 'genres-3')?.titles ?? [],
@@ -571,7 +605,14 @@ async function refresh(
           : [];
       }
     );
-    const ranked = rank(pool, profile, type).map(({ title }) => title);
+    const seed =
+      row === 'watched' ? recent : row === 'loved' ? loved : undefined;
+    const related = new Set(
+      seed ? source.get(seed.id)?.map(({ id }) => id) : []
+    );
+    const ranked = rank(pool, profile, type)
+      .map(({ title }) => title)
+      .sort((a, b) => Number(related.has(b.id)) - Number(related.has(a.id)));
     const selected =
       row === 'top' ? diversify(ranked, limit) : ranked.slice(0, limit);
     empty[row] = selected.map((item) => ({

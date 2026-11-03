@@ -637,12 +637,14 @@ test('anime Top Picks are opt-in per media type and share Simkl anime taste', as
     })),
   };
   let libraryCalls = 0;
+  let emptyAnimeHistory = false;
   t.mock.method(globalThis, 'fetch', async (url: URL) => {
     if (url.pathname === '/sync/activities') {
       return Response.json({ all: 'initial', anime: { completed: 'initial' } });
     }
     assert.equal(url.pathname, '/sync/all-items/anime');
     libraryCalls++;
+    if (emptyAnimeHistory) return Response.json({});
     return Response.json({
       anime: [
         {
@@ -700,5 +702,20 @@ test('anime Top Picks are opt-in per media type and share Simkl anime taste', as
       ({ id }) => id === 'anime-top'
     ).length,
     2
+  );
+
+  emptyAnimeHistory = true;
+  const cold = { ...scoped, uuid: 'anime-no-history' };
+  assert.equal(
+    (await recommendationManifest(cold))?.catalogs.filter(
+      ({ id }) => id === 'anime-top'
+    ).length,
+    2
+  );
+  assert.deepEqual(
+    (await getRecommendationCatalog(cold, 'movie', 'anime-top')).map(
+      ({ id }) => id
+    ),
+    ['tt100']
   );
 });
