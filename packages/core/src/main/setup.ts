@@ -1,4 +1,5 @@
-﻿import {
+import { catalogNameOverride } from '../utils/catalog-name.js';
+import {
   createLogger,
   Env,
   getSimpleTextHash,
@@ -91,18 +92,16 @@ export async function applyPresets(ctx: AIOStreamsContext): Promise<void> {
         : addons;
 
       ctx.addons.push(
-        ...filteredAddons.map(
-          (a): Addon => ({
-            ...a,
-            preset: {
-              ...a.preset,
-              id: preset.instanceId,
-            },
-            // if no identifier is present, we can assume that the preset can only generate one addon at a time and so no
-            // unique identifier is needed as the preset instance id is enough to identify the addon
-            instanceId: `${preset.instanceId}${getSimpleTextHash(`${a.identifier ?? ''}`).slice(0, 4)}`,
-          })
-        )
+        ...filteredAddons.map((a): Addon => ({
+          ...a,
+          preset: {
+            ...a.preset,
+            id: preset.instanceId,
+          },
+          // if no identifier is present, we can assume that the preset can only generate one addon at a time and so no
+          // unique identifier is needed as the preset instance id is enough to identify the addon
+          instanceId: `${preset.instanceId}${getSimpleTextHash(`${a.identifier ?? ''}`).slice(0, 4)}`,
+        }))
       );
 
       // Service Wrap: generate the P2P-mode addon for this preset
@@ -132,17 +131,15 @@ export async function applyPresets(ctx: AIOStreamsContext): Promise<void> {
           );
           // Only keep addons that are actually P2P (not debrid addons from presets that don't care about services)
           ctx.addons.push(
-            ...p2pAddons.map(
-              (a): Addon => ({
-                ...a,
-                preset: {
-                  ...a.preset,
-                  id: preset.instanceId,
-                },
-                instanceId: `${preset.instanceId}${getSimpleTextHash(`servicewrap-${a.identifier ?? ''}`).slice(0, 4)}`,
-                serviceWrapped: true,
-              })
-            )
+            ...p2pAddons.map((a): Addon => ({
+              ...a,
+              preset: {
+                ...a.preset,
+                id: preset.instanceId,
+              },
+              instanceId: `${preset.instanceId}${getSimpleTextHash(`servicewrap-${a.identifier ?? ''}`).slice(0, 4)}`,
+              serviceWrapped: true,
+            }))
           );
           logger.debug(
             { preset: Preset.METADATA.NAME, count: p2pAddons.length },
@@ -632,8 +629,9 @@ export function buildResources(ctx: AIOStreamsContext): void {
         const modification = modifications.find(
           (mod) => mod.id === catalog.id && mod.type === catalog.type
         );
-        if (modification?.name) {
-          catalog.name = modification.name;
+        const nameOverride = modification && catalogNameOverride(modification);
+        if (nameOverride) {
+          catalog.name = nameOverride;
         }
 
         const canApplyOnlyOnDiscover = catalog.extra

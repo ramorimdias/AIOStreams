@@ -193,7 +193,7 @@ export function CatalogSettingsCard({
         (type === ANY_TYPE || (c.overrideType ?? c.type) === type) &&
         matchesStatus(c) &&
         (!query ||
-          [c.name, c.id, c.addonName].some((v) =>
+          [c.name || c.upstreamName, c.id, c.addonName].some((v) =>
             v?.toLowerCase().includes(query)
           ))
     );

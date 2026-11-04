@@ -1,0 +1,12 @@
+# Small overlay on the exact official image retained before deployment.
+# Build artifacts only; runtime dependencies and other applications stay on that image.
+FROM mirror.gcr.io/library/node:24-alpine AS catalog-builder
+WORKDIR /build
+RUN corepack enable
+COPY . .
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm -F core build && pnpm -F frontend build
+
+FROM aiostreams-before-catalog-fix:20261104
+COPY --from=catalog-builder /build/packages/core/dist /app/packages/core/dist
+COPY --from=catalog-builder /build/packages/frontend/dist /app/packages/frontend/dist

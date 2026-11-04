@@ -150,7 +150,7 @@ const CatalogRow = memo(function CatalogRow({
         >
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-medium">
-              {catalog.name ?? catalog.id}
+              {catalog.name || catalog.upstreamName || catalog.id}
             </p>
             {isNew && (
               <Badge intent="primary" size="sm" className="flex-shrink-0">
@@ -353,7 +353,7 @@ function CatalogSettingsModal({
     <Modal
       open
       onOpenChange={(open) => !open && onClose()}
-      title={catalog.name ?? catalog.id}
+      title={catalog.name || catalog.upstreamName || catalog.id}
       description={merged ? 'Merged catalog' : catalog.addonName}
     >
       <div className="space-y-4">
@@ -377,13 +377,20 @@ function CatalogSettingsModal({
                 toast.error('Type cannot be empty');
                 return;
               }
-              update((c) => ({ ...c, name: newName, overrideType: newType }));
+              update((c) => ({
+                ...c,
+                name: newName.trim() || undefined,
+                nameIsCustom: newName.trim() ? true : undefined,
+                overrideType: newType,
+              }));
               toast.success('Name and type saved');
             }}
           >
             <TextInput
               label="Name"
-              placeholder="Enter catalog name"
+              placeholder={
+                catalog.upstreamName || 'Follow addon name (leave blank)'
+              }
               value={newName}
               onValueChange={setNewName}
             />

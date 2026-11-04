@@ -113,7 +113,8 @@ function Content() {
           // Unchanged rows keep their object, so they skip re-rendering.
           if (
             nMod &&
-            (nMod.addonName !== eMod.addonName ||
+            (nMod.name !== eMod.upstreamName ||
+              nMod.addonName !== eMod.addonName ||
               nMod.type !== eMod.type ||
               nMod.hideable !== eMod.hideable ||
               nMod.genreRequired !== eMod.genreRequired ||
@@ -121,6 +122,7 @@ function Content() {
           ) {
             return {
               ...eMod,
+              upstreamName: nMod.name,
               addonName: nMod.addonName,
               type: nMod.type,
               hideable: nMod.hideable,
@@ -141,7 +143,10 @@ function Content() {
               0,
               {
                 id: catalog.id,
-                name: catalog.name,
+                name: /(?:^|\.)recommendations\./.test(catalog.id)
+                  ? undefined
+                  : catalog.name,
+                upstreamName: catalog.name,
                 type: catalog.type,
                 enabled: !startOff.has(catalog.id.split('.')[0]),
                 shuffle: false,

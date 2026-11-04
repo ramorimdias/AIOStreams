@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { catalogNameOverride } from '../utils/catalog-name.js';
 import * as constants from '../utils/constants.js';
 import { config } from '../config/index.js';
 import { WD1_KEY_REGEX } from '../release-blocklist/keys.js';
@@ -564,25 +565,29 @@ export type Group = z.infer<typeof Group>;
 
 // Resolution, Quality, Encode, Visual Tag, Audio Tag, Stream Type, Keyword, Regex, Cached, Uncached, Size
 
-const CatalogModification = z.object({
-  id: z.string().min(1), // an id that maps to an actual catalog ID
-  type: z.string().min(1), // the type of catalog modification
-  name: z.string().optional(), // override the name of the catalog
-  shuffle: z.boolean().optional(), // shuffle the catalog
-  reverse: z.boolean().optional(), // reverse the catalog
-  persistShuffleFor: z.number().min(0).max(24).optional(), // persist the shuffle for a given amount of time (in hours)
-  onlyOnDiscover: z.boolean().optional(), // only show the catalog on the discover page
-  showOnHome: z.boolean().optional(), // show a genre-requiring catalog on the home page too
-  disableSearch: z.boolean().optional(), // disable the search for the catalog
-  onlyOnSearch: z.boolean().optional(), // only show the catalog on search results - mutually exclusive with onlyOnDiscover, only available when the catalog has a non-required search extra
-  enabled: z.boolean().optional(), // enable or disable the catalog
-  usePosterService: z.boolean().optional(), // use rpdb or top poster for posters if supported
-  overrideType: z.string().min(1).optional(), // override the type of the catalog
-  hideable: z.boolean().optional(), // hide the catalog from the home page
-  genreRequired: z.boolean().optional(), // property of whether only a genre is required (showOnHome applies)
-  searchable: z.boolean().optional(), // property of whether the catalog is searchable (not a search only catalog)
-  addonName: z.string().optional(), // the name of the addon that provides the catalog
-});
+const CatalogModification = z
+  .object({
+    id: z.string().min(1), // an id that maps to an actual catalog ID
+    type: z.string().min(1), // the type of catalog modification
+    name: z.string().optional(), // explicit override, absent to follow upstream
+    upstreamName: z.string().optional(), // display hint only, never an override
+    nameIsCustom: z.boolean().optional(), // set only by an explicit rename
+    shuffle: z.boolean().optional(), // shuffle the catalog
+    reverse: z.boolean().optional(), // reverse the catalog
+    persistShuffleFor: z.number().min(0).max(24).optional(), // persist the shuffle for a given amount of time (in hours)
+    onlyOnDiscover: z.boolean().optional(), // only show the catalog on the discover page
+    showOnHome: z.boolean().optional(), // show a genre-requiring catalog on the home page too
+    disableSearch: z.boolean().optional(), // disable the search for the catalog
+    onlyOnSearch: z.boolean().optional(), // only show the catalog on search results - mutually exclusive with onlyOnDiscover, only available when the catalog has a non-required search extra
+    enabled: z.boolean().optional(), // enable or disable the catalog
+    usePosterService: z.boolean().optional(), // use rpdb or top poster for posters if supported
+    overrideType: z.string().min(1).optional(), // override the type of the catalog
+    hideable: z.boolean().optional(), // hide the catalog from the home page
+    genreRequired: z.boolean().optional(), // property of whether only a genre is required (showOnHome applies)
+    searchable: z.boolean().optional(), // property of whether the catalog is searchable (not a search only catalog)
+    addonName: z.string().optional(), // the name of the addon that provides the catalog
+  })
+  .transform((catalog) => ({ ...catalog, name: catalogNameOverride(catalog) }));
 
 export type CatalogModification = z.infer<typeof CatalogModification>;
 
