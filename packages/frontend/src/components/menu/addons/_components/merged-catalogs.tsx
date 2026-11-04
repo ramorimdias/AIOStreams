@@ -94,7 +94,7 @@ export function MergedCatalogsCard({
     .filter((c) => !c.id.startsWith('aiostreams.merged.')) // Exclude merged catalogs from being selected as sources
     .map((c) => ({
       value: encodeMergeSource(c),
-      name: c.name || c.id,
+      name: c.name || c.upstreamName || c.id,
       catalogType: c.type,
       addonName: c.addonName || 'Unknown Addon',
       isDisabled: c.enabled === false,

@@ -387,7 +387,7 @@ function CatalogSettingsModal({
             }}
           >
             <TextInput
-              label="Name"
+              label="Name override (leave blank to follow addon)"
               placeholder={
                 catalog.upstreamName || 'Follow addon name (leave blank)'
               }
